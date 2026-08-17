@@ -15,6 +15,7 @@ change when a real provider schema shows up.
 | GET | `/events?team=red\|blue&limit=` | Normalized events for one team only |
 | GET | `/timeline?limit=` | Merged, time-ordered Red+Blue normalized events |
 | GET | `/analysis?limit=` | Correlated Red→Blue detections + latency/gap summary |
+| GET | `/events/{event_id}/context?caller=public\|purple&window_minutes=` | Raw payload context window around one event, clearance-filtered |
 
 `/ingest/*` accepts **any JSON object** — there is no fixed producer schema.
 The adapter looks for a set of known field names (aliases below) and falls
@@ -123,6 +124,26 @@ A matched pair is a:
 
 `/analysis` also reports `detection_rate`, `mttd_p50_ms`, and `mttd_p95_ms`
 (latency computed only over `hit` pairs).
+
+## Detection rules
+
+Each correlation row is additionally tagged with `rule_id`, `technique`
+(an ATT&CK ID like `T1190`), and `severity` when the **red** side of the
+pair matches one of the data-driven rules in `src/rbcollector/detections.py`
+(standalone replacement for cyber's Grafana alert rules -- no
+Grafana/Loki/Prometheus deployed here). All three are `null` when nothing
+matched. This tagging never changes a row's `hit`/`detection_gap`/
+`visibility_gap` status, only adds context to it.
+
+## Evidence context
+
+`GET /events/{event_id}/context` returns the raw ingest payloads (both
+teams) observed within `window_minutes` (default 5) of the given event's
+`observed_at`, pulled from the `raw_events` table -- not a separate
+telemetry backend. `caller` decides visibility (see
+`src/rbcollector/disclosure.py`): `public` always gets an empty `lines`
+list (raw payloads are purple-only telemetry detail); `purple` sees
+everything. An unknown `event_id` is a 404, not an empty result.
 
 ## Example
 
