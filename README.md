@@ -34,6 +34,17 @@ API docs:
 http://localhost:8000/docs
 ```
 
+## Smoke test
+
+```powershell
+pwsh scripts/smoke-test.ps1
+```
+
+Brings the stack up, POSTs [`examples/red-event.json`](examples/red-event.json)
+and [`examples/blue-event.json`](examples/blue-event.json), and asserts the
+full pipeline actually produces a correlated `hit` on `/timeline` and
+`/analysis` — not just a 200 on ingest.
+
 ## Red ingestion
 
 ```bash
@@ -74,6 +85,12 @@ Or one side only:
 curl 'http://localhost:8000/events?team=red'
 curl 'http://localhost:8000/events?team=blue'
 ```
+
+## Interface contract
+
+See [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md) for the full
+field-alias table, normalized event shape, and correlation logic — this is
+what to hand the Red/Blue teams instead of the source code.
 
 ## When the real interfaces arrive
 
