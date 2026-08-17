@@ -19,3 +19,7 @@ class BlueAdapter:
             correlation_id=first(payload, ("correlation_id","action_id","request_id","trace_id","alert_id","session_id")),
             metadata=dict(payload),
         )
+
+
+def normalize(payload: dict[str, Any]) -> dict[str, Any]:
+    return BlueAdapter().normalize(payload).model_dump(mode="json")

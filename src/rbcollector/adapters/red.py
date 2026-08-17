@@ -19,3 +19,7 @@ class RedAdapter:
             correlation_id=first(payload, ("correlation_id","action_id","request_id","trace_id","session_id")),
             metadata=dict(payload),
         )
+
+
+def normalize(payload: dict[str, Any]) -> dict[str, Any]:
+    return RedAdapter().normalize(payload).model_dump(mode="json")
