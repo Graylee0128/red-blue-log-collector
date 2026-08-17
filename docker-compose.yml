@@ -1,0 +1,28 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_DB: collector
+      POSTGRES_USER: collector
+      POSTGRES_PASSWORD: collector
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U collector -d collector"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - collector-db:/var/lib/postgresql/data
+
+  collector:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
+    ports:
+      - "8000:8000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  collector-db:
