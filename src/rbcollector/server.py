@@ -2,10 +2,11 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, HTTPException, Query
 
 from .adapters import blue, red
 from .analysis import summarize
+from .auth import require_ingest_token
 from .store import EventStore
 
 app = FastAPI(title="Red/Blue Log Collector", version="0.1.0")
@@ -33,12 +34,12 @@ def _ingest(team: Literal["red", "blue"], payload: dict[str, Any]) -> dict[str, 
     return {"inserted": inserted, "event": event}
 
 
-@app.post("/ingest/red")
+@app.post("/ingest/red", dependencies=[Depends(require_ingest_token)])
 def ingest_red(payload: dict[str, Any]) -> dict[str, Any]:
     return _ingest("red", payload)
 
 
-@app.post("/ingest/blue")
+@app.post("/ingest/blue", dependencies=[Depends(require_ingest_token)])
 def ingest_blue(payload: dict[str, Any]) -> dict[str, Any]:
     return _ingest("blue", payload)
 
