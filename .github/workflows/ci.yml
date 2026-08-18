@@ -3,6 +3,7 @@ name: CI
 on:
   push:
     branches: [main]
+    tags: ["v*"]
   pull_request:
     branches: [main]
 
@@ -25,17 +26,45 @@ jobs:
       - name: pytest (adapters + analysis)
         run: pytest -v
 
-  # 打包成 image 給 Metis 拉：只在 push 進 main 時發布（PR 不發，避免還沒審查的東西
-  # 被拉走），用內建的 GITHUB_TOKEN 推 GHCR，不用另外存 Docker Hub 帳密。
+  # 打包成 image 給 Metis 拉：main branch 推 :latest 用於開發，git tag 推對應的
+  # semver tag（如 v0.1.0）用於正式部署。用內建的 GITHUB_TOKEN 推 GHCR，不用另
+  # 外存 Docker Hub 帳密。
   publish-image:
     needs: test
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
     runs-on: ubuntu-latest
     permissions:
       contents: read
       packages: write
     steps:
       - uses: actions/checkout@v4
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            VERSION=${GITHUB_REF#refs/tags/}
+            echo "version=${VERSION}" >> $GITHUB_OUTPUT
+            echo "is_release=true" >> $GITHUB_OUTPUT
+          else
+            echo "version=latest" >> $GITHUB_OUTPUT
+            echo "is_release=false" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Verify version consistency (tags only)
+        if: steps.version.outputs.is_release == 'true'
+        run: |
+          TAG_VERSION=${{ steps.version.outputs.version }}
+          PYPROJECT_VERSION=$(grep '^version = ' pyproject.toml | sed 's/version = "\(.*\)"/\1/')
+          if [[ "$TAG_VERSION" != "v$PYPROJECT_VERSION" ]]; then
+            echo "Version mismatch:"
+            echo "  git tag:        $TAG_VERSION"
+            echo "  pyproject.toml: v$PYPROJECT_VERSION"
+            echo ""
+            echo "Fix: Update pyproject.toml to version=\"${TAG_VERSION#v}\" before tagging"
+            exit 1
+          fi
+          echo "✓ Version verified: $TAG_VERSION matches pyproject.toml"
 
       - name: Log in to GHCR
         uses: docker/login-action@v3
@@ -44,16 +73,22 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push
+      - name: Build and push (release tag)
+        if: steps.version.outputs.is_release == 'true'
         uses: docker/build-push-action@v6
         with:
           context: .
           push: true
-          # latest 給 Metis 的 yaml 追蹤最新版；sha 那個 tag 讓每一次發布都可回溯，
-          # 出事時能釘住某一版重現，不用只能猜「latest 是哪次 commit 的」。
-          # 寫死小寫，不用 github.repository_owner —— GHCR／Docker image 名稱不
-          # 允許大寫，這個 repo owner 剛好是 Graylee0128（大寫 G），直接內插會讓
-          # build-push-action 在推送那一步失敗（已經真的撞過一次：run #9）。
+          tags: |
+            ghcr.io/graylee0128/red-blue-log-collector:${{ steps.version.outputs.version }}
+            ghcr.io/graylee0128/red-blue-log-collector:latest
+
+      - name: Build and push (main branch)
+        if: steps.version.outputs.is_release == 'false'
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
           tags: |
             ghcr.io/graylee0128/red-blue-log-collector:latest
             ghcr.io/graylee0128/red-blue-log-collector:${{ github.sha }}

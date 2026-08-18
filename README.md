@@ -248,6 +248,55 @@ there's no normalized_events row for those (yet); they're logged and
 skipped. `role="red"`/`role="blue"` map the same way the manual forwarders
 do, so the same correlation caveat above applies here too.
 
+## Release
+
+Image version must match semantic versioning (semver). To publish a new version:
+
+1. Update `version` in [`pyproject.toml`](pyproject.toml):
+   ```toml
+   [project]
+   version = "0.2.0"  # e.g., 0.1.0 → 0.2.0
+   ```
+
+2. Commit and create a git tag matching the version:
+   ```bash
+   git add pyproject.toml
+   git commit -m "版本提升至 0.2.0"
+   git tag v0.2.0      # Tag MUST start with 'v'
+   git push origin main --tags
+   ```
+
+3. CI will:
+   - Verify the tag version (`v0.2.0`) matches `pyproject.toml` (`0.2.0`)
+   - Build and push the image with tags:
+     - `ghcr.io/graylee0128/red-blue-log-collector:v0.2.0` (pinned release)
+     - `ghcr.io/graylee0128/red-blue-log-collector:latest` (development/convenience)
+   - Fail if versions don't match, with a clear error message
+
+### Version mismatch
+
+If CI fails with a version mismatch error, the tag was pushed but the image was
+not built. Fix and retry:
+
+```bash
+# If tag was pushed but version is wrong:
+git tag -d v0.2.0
+git push origin :refs/tags/v0.2.0
+# Then fix pyproject.toml and try again
+```
+
+### Consuming the image
+
+- **Development:** Use `:latest` (always tracks main branch)
+- **Production:** Use a pinned version tag (e.g. `:v0.2.0`) — see
+  [`docker-compose.yml`](docker-compose.yml) for the current example
+
+```yaml
+services:
+  collector:
+    image: ghcr.io/graylee0128/red-blue-log-collector:v0.2.0
+```
+
 ## Interface contract
 
 See [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md) for the full
