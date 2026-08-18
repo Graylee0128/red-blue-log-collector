@@ -92,6 +92,35 @@ curl 'http://localhost:8000/events?team=red'
 curl 'http://localhost:8000/events?team=blue'
 ```
 
+## Grafana
+
+```bash
+docker compose up -d --build grafana
+```
+
+Open `http://<host>:3000` (default login `admin`/`admin`). The `Purple
+Collector Postgres` data source is provisioned automatically from
+[`deploy/grafana/provisioning/datasources/datasources.yaml`](deploy/grafana/provisioning/datasources/datasources.yaml)
+and points at the `collector` Postgres above — build SQL panels against the
+`normalized_events` / `raw_events` tables there.
+
+This is **not** a drop-in for cyber's Blue SOC dashboard: that one queries
+Loki/Prometheus, which this standalone stack does not run. Dashboards here
+need to be built fresh against the Postgres schema.
+
+**Disclosure boundary applies here too.** `GF_AUTH_ANONYMOUS_ENABLED=true`
+means anyone who can reach `:3000` sees provisioned dashboards with no
+login — and Grafana's Postgres datasource queries `normalized_events`
+directly, bypassing the collector API entirely, so `require_purple_clearance`
+(see [Authentication](docs/INTERFACE_CONTRACT.md#authentication)) does not
+apply to it. Any panel built here must not query raw per-event detail
+(`message`, `actor`, `source_ip`, `destination`, ...) without a `WHERE`
+clause that keeps it to safe-to-publish rows — see the provisioned
+`purple-collector-overview` dashboard's "最新藍隊偵測事件" panel for the
+pattern (blue-team rows that read as a detection only; never a bare red
+action, which is exactly what a `visibility_gap` is). Aggregate-only panels
+(counts, distributions, timeseries) don't need this restriction.
+
 ## Exposing to other VMs
 
 `docker-compose.yml`'s `"8000:8000"` port mapping already binds to all

@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Purple Console</title>
+<style>
+  /* 獨立頁面：不依賴 cyber ui/assets 共用檔，色票沿用同一套視覺語彙但自己內嵌，
+     這樣這個頁面搬到哪裡都能單獨開，不用連帶搬一整個 ui/ 目錄。 */
+  :root {
+    --bg: #0f1420; --panel: #161d2e; --border: #2a3348;
+    --text: #e6e9f0; --muted: #8b93a7; --purple: #a78bfa; --purple-dim: #241d3a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; font-family: -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+    background: var(--bg); color: var(--text); padding: 24px;
+  }
+  .topbar {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 16px; margin-bottom: 16px; flex-wrap: wrap;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { color: var(--muted); font-size: 13px; }
+  .who { font-size: 13px; color: var(--muted); }
+  .dot-live { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; background: var(--muted); }
+  .dot-live.on { background: #37e08a; }
+  .dot-live.off { background: #ff4d5e; }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 16px; margin-bottom: 16px;
+  }
+  .panel-title { font-weight: 600; margin-bottom: 10px; }
+
+  .source-row { display: flex; gap: 8px; margin-bottom: 12px; flex-wrap: wrap; }
+  .source-row input {
+    flex: 1; min-width: 260px; background: #0f1420; border: 1px solid var(--border);
+    color: var(--text); border-radius: 6px; padding: 8px 10px; font-family: ui-monospace, Consolas, monospace; font-size: 12px;
+  }
+  .source-row button {
+    background: var(--purple-dim); border: 1px solid var(--purple); color: var(--text);
+    border-radius: 6px; padding: 8px 14px; cursor: pointer; font-size: 13px;
+  }
+  .source-row button:hover { background: var(--purple); color: #0f1420; }
+
+  .grafana { width: 100%; height: 70vh; border: 1px solid var(--border); border-radius: 6px; background: #0f1420; }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div>
+    <h1>Purple Console</h1>
+    <div class="sub">獨立頁面 · 只負責嵌入紫隊的 Grafana，不依賴 cyber 的 exercise/scoring/response 後端</div>
+  </div>
+  <div class="who"><span class="dot-live" id="live"></span>身分 <b>purple</b></div>
+</div>
+
+<div class="panel">
+  <div class="panel-title">Grafana</div>
+  <div class="source-row">
+    <input id="grafana-url" type="text" placeholder="http://10.167.223.61:3000/" />
+    <button id="load-btn">連線</button>
+  </div>
+  <iframe class="grafana" id="grafana-frame" title="grafana"></iframe>
+</div>
+
+<script>
+  // 完全自包含：沒有外部 JS/CSS 檔案依賴，也不呼叫任何後端 API，
+  // 純粹是一個把 Grafana 嵌進 iframe 的獨立導覽頁。
+  const STORAGE_KEY = "purple-console.grafana-url";
+  const input = document.getElementById("grafana-url");
+  const frame = document.getElementById("grafana-frame");
+  const liveDot = document.getElementById("live");
+  const btn = document.getElementById("load-btn");
+
+  function defaultUrl() {
+    // 假設 Console 跟 Grafana 部署在同一台主機，預設用目前網址的 host 猜 :3000。
+    // 指向 provisioned 的 purple-collector-overview dashboard（kiosk 模式收掉
+    // Grafana 自己的側欄/頂欄 —— iframe 裡的人是 Viewer，那些導覽用不到）。
+    const host = window.location.hostname || "10.167.223.61";
+    return `http://${host}:3000/d/purple-collector-overview/purple-collector-overview?kiosk`;
+  }
+
+  function load(url) {
+    if (!url) return;
+    frame.src = url;
+    localStorage.setItem(STORAGE_KEY, url);
+  }
+
+  frame.addEventListener("load", () => { liveDot.className = "dot-live on"; });
+  frame.addEventListener("error", () => { liveDot.className = "dot-live off"; });
+
+  btn.addEventListener("click", () => load(input.value.trim()));
+  input.addEventListener("keydown", (e) => { if (e.key === "Enter") load(input.value.trim()); });
+
+  const saved = localStorage.getItem(STORAGE_KEY) || defaultUrl();
+  input.value = saved;
+  load(saved);
+</script>
+
+</body>
+</html>
