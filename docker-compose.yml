@@ -24,5 +24,21 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # 紫隊 Grafana 介面：只接現有 collector Postgres（見 deploy/grafana/provisioning/
+  # datasources/datasources.yaml），不含 cyber 那條 Loki/Prometheus log/metric pipeline。
+  grafana:
+    image: grafana/grafana:11.2.0
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
+    ports:
+      - "3000:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   collector-db:

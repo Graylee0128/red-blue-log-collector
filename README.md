@@ -86,6 +86,22 @@ curl 'http://localhost:8000/events?team=red'
 curl 'http://localhost:8000/events?team=blue'
 ```
 
+## Grafana
+
+```bash
+docker compose up -d --build grafana
+```
+
+Open `http://<host>:3000` (default login `admin`/`admin`). The `Purple
+Collector Postgres` data source is provisioned automatically from
+[`deploy/grafana/provisioning/datasources/datasources.yaml`](deploy/grafana/provisioning/datasources/datasources.yaml)
+and points at the `collector` Postgres above — build SQL panels against the
+`normalized_events` / `raw_events` tables there.
+
+This is **not** a drop-in for cyber's Blue SOC dashboard: that one queries
+Loki/Prometheus, which this standalone stack does not run. Dashboards here
+need to be built fresh against the Postgres schema.
+
 ## Interface contract
 
 See [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md) for the full
