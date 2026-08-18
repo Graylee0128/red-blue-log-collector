@@ -77,10 +77,10 @@
 
   function defaultUrl() {
     // 假設 Console 跟 Grafana 部署在同一台主機，預設用目前網址的 host 猜 :3000。
-    // 沒有 dashboard UID 可寫死 —— 紫隊 Grafana 目前只 provision 了 datasource，
-    // 還沒有現成的 dashboard，所以先指向首頁，之後有 dashboard 再把路徑接上。
+    // 指向 provisioned 的 purple-collector-overview dashboard（kiosk 模式收掉
+    // Grafana 自己的側欄/頂欄 —— iframe 裡的人是 Viewer，那些導覽用不到）。
     const host = window.location.hostname || "10.167.223.61";
-    return `http://${host}:3000/`;
+    return `http://${host}:3000/d/purple-collector-overview/purple-collector-overview?kiosk`;
   }
 
   function load(url) {
