@@ -7,9 +7,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   /* Nocturne tokens —— 跟 UI DEMO（Battleboard）同一組視覺系統。獨立頁面，沒有
-     外部 JS/CSS 依賴。頂部統計格跟關聯時間軸打 collector 的 /analysis API 拿
-     真資料；拓樸／藍隊修補格／紅藍 Shell 目前沒有對應的真實資料模型，維持
-     示意（見頁首說明跟各面板圖說）。 */
+     外部 JS/CSS 依賴。給全場觀眾看的公開戰況板：只打 collector 的公開
+     /analysis（caller=public，不帶 token），頂部統計格跟關聯時間軸打真資料。
+     左右兩塊紅／藍隊面板改成「每座位一條進度條」——座位數是動態的（有
+     幾個人就有幾個座位），固定節點圖沒辦法對應，進度條天生可以長任意
+     條數，紅藍兩邊共用同一套視覺語言。目前沒有對應的真實每人進度資料，
+     面板結構保留，一律顯示無資料的靜止狀態，不編造完成度。 */
   :root {
     --color-bg: #0b0d14;
     --color-surface: #232532;
@@ -31,6 +34,12 @@
     --shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0,0,0,0.55);
   }
   *, *::before, *::after { box-sizing: border-box; }
+  /* 這頁很多元件（.panel-empty/.breach-view/.patch-grid/.empty-banner/
+     .error-banner…）自己設了 display:flex，跟瀏覽器內建的 [hidden]{display:
+     none} 是同一特異度層級——author 樣式會蓋過 UA 樣式，導致 JS 設定的
+     element.hidden 實際上不會真的隱藏它們。這條規則用 !important 保證
+     hidden 屬性永遠贏，不用逐一拿掉每個 class 的 display。 */
+  [hidden] { display: none !important; }
   html, body { margin: 0; background: var(--color-bg); color: var(--color-text); }
   body {
     font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
@@ -59,7 +68,7 @@
   .controls input:focus-visible, .controls select:focus-visible, .controls button:focus-visible {
     outline: 2px solid var(--color-accent); outline-offset: 2px;
   }
-  .controls .status { display: flex; align-items: center; gap: 8px; }
+  .controls .status { display: flex; align-items: center; gap: 8px; margin-left: auto; }
   .controls .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-neutral-700); }
   .controls .status .dot.ok { background: #37e08a; }
   .controls .status .dot.err { background: #ff4d5e; }
@@ -74,30 +83,6 @@
   }
 
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
-  @keyframes attackFlash {
-    0%   { background: #4a1520; box-shadow: 0 0 0 rgba(255,77,94,0); transform: scale(1); }
-    45%  { background: #ff4d5e; box-shadow: 0 0 26px rgba(255,77,94,0.85); transform: scale(1.08); }
-    100% { background: #4a1520; box-shadow: 0 0 0 rgba(255,77,94,0); transform: scale(1); }
-  }
-  @keyframes patchPop {
-    0%   { background: #12314d; box-shadow: 0 0 0 rgba(77,166,255,0); transform: scale(0.94); }
-    40%  { background: #62b0ff; box-shadow: 0 0 26px rgba(77,166,255,0.85); transform: scale(1.1); }
-    100% { background: #2b6fb0; box-shadow: 0 0 10px rgba(77,166,255,0.35); transform: scale(1); }
-  }
-  @keyframes sweep { 0% { opacity: 0.25; } 50% { opacity: 1; } 100% { opacity: 0.25; } }
-  @keyframes beamTravel {
-    0%   { top: 0%;   opacity: 0; }
-    8%   { opacity: 1; }
-    46%  { top: 50%;  opacity: 1; }
-    50%  { top: 50%;  opacity: 1; }
-    92%  { top: 100%; opacity: 1; }
-    100% { top: 100%; opacity: 0; }
-  }
-  @keyframes topoHit {
-    0%, 86%  { background: var(--color-neutral-900); box-shadow: 0 0 0 rgba(255,77,94,0); transform: scale(1); }
-    92%      { background: #ff4d5e; box-shadow: 0 0 26px rgba(255,77,94,0.85); transform: scale(1.05); }
-    100%     { background: #4a1520; box-shadow: 0 0 10px rgba(255,77,94,0.35); transform: scale(1); }
-  }
 
   @media (prefers-reduced-motion: reduce) {
     .stage * { animation: none !important; }
@@ -119,56 +104,89 @@
   .panel-head { display: flex; align-items: baseline; gap: 14px; }
   .panel-tag { font-size: 26px; font-weight: 600; letter-spacing: 0.1em; }
   .panel-sub { font-size: 20px; color: var(--color-neutral-500); white-space: nowrap; }
-  .panel-stat { margin-left: auto; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 20px; color: var(--color-neutral-300); }
-  .panel-note { font-size: 13px; color: var(--color-neutral-600); }
-  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 19px; color: var(--color-neutral-400); margin-top: auto; }
-  .legend .swatch { display: flex; align-items: center; gap: 8.4px; }
-  .legend .chip { width: 14px; height: 14px; border-radius: 4px; }
 
-  .topo { position: relative; flex: 1; display: flex; min-height: 0; }
-  .topo-track { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; padding: 4px 0; }
-  .topo-line { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: linear-gradient(180deg, rgba(255,77,94,0.5), rgba(255,143,153,0.15) 50%, rgba(255,77,94,0.5)); }
-  .beam { position: absolute; left: 50%; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: #ff4d5e; box-shadow: 0 0 16px 4px rgba(255,77,94,0.8); }
-  .node { position: relative; display: flex; align-items: center; gap: 11.2px; padding: 11.2px 16.8px; border-radius: 8px; background: var(--color-neutral-900); border: 1px solid var(--color-neutral-700); }
-  .node .name { font-size: 20px; font-weight: 500; color: var(--color-text); }
-  .node .caption { font-size: 15px; color: var(--color-neutral-500); }
-  .node-attacker { border-color: #ff4d5e; }
+  .panel-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--color-neutral-600); text-align: center; }
 
-  .timeline-head { display: flex; align-items: center; gap: 16.8px; }
-  .timeline-title { font-size: 22px; letter-spacing: 0.14em; color: var(--color-neutral-500); }
-  .timeline-legend { margin-left: auto; display: flex; gap: 22.4px; font-size: 18px; color: var(--color-neutral-400); }
-  .timeline-legend span { display: flex; align-items: center; gap: 8.4px; }
+  /* 紅隊攻擊拓樸右側的靶機格——每個靶機一對方塊（外網／內網），用一條
+     線連著。flex-direction:column + flex-wrap:wrap 讓格數（跟不同
+     destination 數同步，見 renderBreachPanel）超過一欄能裝的高度時自動
+     換到下一欄，不用寫死總數對應幾欄。 */
+  .patch-grid { flex: 1; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: center; justify-content: center; gap: 10px 20px; }
+  .patch-pair { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
+  .patch-cell { width: 44px; height: 44px; flex-shrink: 0; border-radius: 8px; background: var(--color-neutral-900); border: 1px solid var(--color-neutral-800); position: relative; overflow: hidden; }
+  .patch-cell-fill { position: absolute; inset: 0; background: linear-gradient(135deg, #1f4a70, #4da6ff); opacity: 0; transition: opacity 0.4s ease; }
+  .patch-link { width: 20px; height: 3px; background: var(--color-neutral-700); flex-shrink: 0; }
+
+  /* 藍隊整體修補進度——大分數（現在／滿分 140，滿分是真實數字，來自
+     checker.py 7 關 20 分制，見 BLUE.pdf；現在的分數目前沒有真資料，
+     固定顯示「—」，不編造），下面一排格子，不分組。cell-done／
+     cell-active／cell-idle 三態備用，目前沒有真實的每項完成狀態，
+     一律畫成 cell-idle，不編造哪些已修好。 */
+  .blue-progress { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
+  .score-block { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; max-width: 280px; }
+  .score-row { display: flex; align-items: baseline; gap: 12px; }
+  .score-val { font-size: 76px; font-weight: 600; line-height: 1; color: var(--color-text); font-variant-numeric: tabular-nums; }
+  .score-max { font-size: 30px; color: var(--color-neutral-500); }
+  /* 分數軌道——目前沒有真資料，固定 0% 寬，只是讓面板不要看起來太空，
+     不是編造進度。 */
+  .score-track { width: 100%; height: 10px; border-radius: 999px; background: var(--color-neutral-800); overflow: hidden; }
+  .score-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #1f4a70, #4da6ff); }
+  .cell-grid { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+  .cell-row { display: flex; gap: 16px; }
+  .cell { width: 68px; height: 68px; border-radius: 10px; }
+  .cell-idle { background: var(--color-neutral-800); }
+  .cell-done { background: linear-gradient(135deg, #22d3ee, #22d3ee); }
+  .cell-active { background: linear-gradient(90deg, #1a3a6b, #22d3ee); }
+
+  /* 困難模式：稽核覆蓋率（見 BLUE.pdf「查清：稽核覆蓋圖」）——五個稽核
+     方向，查過哪塊就從暗變亮，不給對錯只給覆蓋率。目前沒有真實的
+     cmdlog 分類資料，一律未勘查。 */
+  .audit-coverage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
+  .audit-count { font-size: 18px; color: var(--color-neutral-400); }
+  .audit-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
+  .audit-cell { width: 108px; padding: 12px 8px; border-radius: 8px; border: 1px dashed var(--color-neutral-700); text-align: center; }
+  .audit-cell .audit-label { font-size: 14px; color: var(--color-neutral-400); display: block; }
+  .audit-cell .audit-state { font-size: 12px; color: var(--color-neutral-600); display: block; margin-top: 4px; }
+  .audit-cell.visited { border-style: solid; border-color: #4da6ff; background: rgba(77,166,255,0.08); }
+  .audit-cell.visited .audit-label { color: var(--color-text); }
+  .audit-cell.visited .audit-state { color: #8ec6ff; }
+
+  /* 紅隊攻擊拓樸——左邊是紅隊攻擊來源（單一匿名方塊，不對應特定座位），
+     右邊是靶機，每個靶機用一對方塊表示（外網／內網兩台機器，跟藍隊
+     修補格同一套 .patch-pair 元件），中間通道箭頭代表「偵測到攻擊行動
+     時，左邊打向右邊」的方向。目前沒有真實的攻擊偵測事件可以觸發，兩邊
+     都畫成未亮燈的骨架，通道也先是靜止箭頭。 */
+  .breach-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: center; }
+  /* 直排、超過 5 個換第二欄——跟旁邊 .patch-grid（靶機格）同一種排法，
+     max-height 卡在剛好 5 格的高度（5*44 + 4*8 間距），逼它換欄，不是
+     等實際欄高不夠才換。 */
+  .breach-grid { display: flex; flex-direction: column; flex-wrap: wrap; max-height: 252px; align-content: center; justify-content: center; align-self: center; gap: 8px; }
+  .breach-cell { width: 44px; height: 44px; flex-shrink: 0; border-radius: 6px; background: var(--color-neutral-900); border: 1px solid #5c2530; }
+
+  .timeline-head { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; }
+  .timeline-title { font-size: 15px; letter-spacing: 0.1em; color: var(--color-neutral-500); white-space: nowrap; flex-shrink: 0; }
+  .timeline-legend { margin-left: auto; display: flex; flex-wrap: nowrap; gap: 14px; font-size: 13px; color: var(--color-neutral-400); }
+  .timeline-legend span { display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
   .timeline-cols { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 8px 14px; align-items: center; font-size: 20px; color: var(--color-neutral-600); }
   .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
   .t-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 14px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--color-divider); white-space: nowrap; }
-  .t-row .time { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 21px; color: var(--color-neutral-500); }
+  .t-row .time { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 15px; color: var(--color-neutral-500); }
   .t-row .who { display: flex; align-items: center; gap: 11.2px; overflow: hidden; }
   .t-row .who .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
   .t-row .who .label { font-size: 21px; overflow: hidden; text-overflow: ellipsis; }
   .t-row .bar { height: 3px; }
-  .t-row .dash { height: 0; border-top: 2px dashed var(--color-neutral-700); }
+  .t-row .dash { height: 0; border-top: 2px dashed #ff4d5e; opacity: 0.7; }
   .t-row .miss { display: flex; align-items: center; gap: 11.2px; }
-  .t-row .miss .ring { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--color-neutral-700); flex-shrink: 0; }
-  .t-row .miss .txt { font-size: 21px; color: var(--color-neutral-600); }
+  .t-row .miss .ring { width: 10px; height: 10px; border-radius: 50%; border: 2px solid #ff4d5e; flex-shrink: 0; }
+  .t-row .miss .txt { font-size: 21px; color: #ff9aa4; }
   .t-row .latency { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 21px; text-align: right; color: var(--color-neutral-400); }
-
-  .score-row { display: flex; align-items: baseline; gap: 11.2px; }
-  .score-val { font-size: 76px; line-height: 0.85; font-weight: 500; letter-spacing: -0.03em; color: #8ec6ff; font-variant-numeric: tabular-nums; }
-  .score-max { font-size: 32px; color: var(--color-neutral-600); }
-  .score-track { height: 12px; border-radius: 999px; background: var(--color-neutral-900); overflow: hidden; }
-  .score-fill { height: 100%; background: linear-gradient(90deg, #2b6fb0, #62b0ff); transition: width 0.4s ease; }
-  .cell-grid { display: grid; gap: 10px; }
-  .cell { height: 44px; border-radius: 6px; }
-  .cell-idle { background: var(--color-neutral-900); border: 1px solid var(--color-neutral-800); }
-  .cell-done { background: #2b6fb0; border: 1px solid #62b0ff; }
-  .cell-active { background: #12314d; border: 1px solid #4da6ff; animation: patchPop 1.8s ease-in-out infinite; }
 
   .shell-row { display: grid; grid-template-columns: 1fr 1fr; gap: 22.4px; flex: 1; min-height: 0; }
   .shell { display: flex; flex-direction: column; min-height: 0; border-radius: 14px; background: #0d0f19; overflow: hidden; }
   .shell-head { display: flex; align-items: center; gap: 14px; padding: 11.2px 22.4px; border-bottom: 1px solid; flex-shrink: 0; }
   .shell-head .dot { width: 10px; height: 10px; border-radius: 50%; }
   .shell-head .title { font-size: 21px; letter-spacing: 0.1em; }
-  .shell-head .path { margin-left: auto; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 17px; color: var(--color-neutral-600); }
   .shell-body { flex: 1; min-height: 0; overflow: hidden; padding: 11.2px 22.4px; display: flex; flex-direction: column; gap: 4px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 20px; line-height: 1.3; }
   .shell-body .line { display: flex; gap: 14px; white-space: nowrap; }
   .shell-body .time { color: var(--color-neutral-700); }
@@ -180,30 +198,26 @@
 
 <div class="page-head">
   <h1>Purple Console</h1>
-  <span class="sub">投影用大螢幕戰況板 · 頂部統計格與中間關聯時間軸接 collector 的 /analysis 即時資料 · 左右拓樸／修補格與下方 Shell 目前無對應資料模型，維持示意</span>
+  <span class="sub">投影用大螢幕戰況板 · 頂部統計格與中間關聯時間軸接 collector 的公開 /analysis 即時資料 · 左右紅／藍隊進度條與下方 Shell 目前無對應資料模型，固定顯示無資料狀態</span>
 </div>
 
 <div class="controls">
   <div class="group">
     <label for="api-base">Collector API</label>
-    <input id="api-base" type="text" placeholder="http://10.167.223.61:8001" spellcheck="false">
-  </div>
-  <div class="group">
-    <label for="token">Bearer token（選填）</label>
-    <input id="token" type="password" placeholder="INGEST_TOKEN 有設才需要" spellcheck="false">
+    <input id="api-base" type="text" placeholder="自動偵測目前主機" spellcheck="false">
   </div>
   <button type="button" id="reconnect">重新連線</button>
+  <div class="group">
+    <label for="difficulty">藍隊難度</label>
+    <select id="difficulty">
+      <option value="簡單">簡單</option>
+      <option value="普通" selected>普通</option>
+      <option value="困難">困難</option>
+    </select>
+  </div>
   <div class="status">
     <span class="dot" id="status-dot"></span>
     <span id="status-text">尚未連線</span>
-  </div>
-  <div class="group" style="margin-left: auto;">
-    <label for="difficulty">藍隊難度（示意）</label>
-    <select id="difficulty">
-      <option value="簡單">簡單（5 題）</option>
-      <option value="普通">普通（5 題）</option>
-      <option value="困難" selected>困難（7 題）</option>
-    </select>
   </div>
 </div>
 
@@ -221,8 +235,8 @@
     <div class="stat-row">
       <div class="stat-tile"><span class="label">動作</span><span class="value" id="stat-actions">—</span></div>
       <div class="stat-tile"><span class="label">偵測</span><span class="value" id="stat-detected">—</span></div>
-      <div class="stat-tile"><span class="label">反應 TIME</span><span class="value" id="stat-mttd">—</span></div>
-      <div class="stat-tile"><span class="label">快速次數</span><span class="value" id="stat-fast" style="color:#6ee7a2;">—</span></div>
+      <div class="stat-tile"><span class="label">反應時間</span><span class="value" id="stat-mttd">—</span></div>
+      <div class="stat-tile"><span class="label">快速偵測</span><span class="value" id="stat-fast" style="color:#6ee7a2;">—</span></div>
       <div style="display:flex; align-items:center; gap:11.2px; font-size:20px; color:var(--color-neutral-400); white-space:nowrap;">
         <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 14px var(--color-accent); animation:pulse 2.4s ease-in-out infinite;"></span>
         <span>更新於 <span id="stat-updated">—</span></span>
@@ -241,73 +255,23 @@
     <div class="panel" style="box-shadow:0 0 0 1px #3f2430;">
       <div class="panel-head">
         <span class="panel-tag" style="color:#ff8f99;">RED</span>
-        <span class="panel-sub">攻擊拓樸</span>
-        <span class="panel-note">示意，非真實資料</span>
+        <span class="panel-sub">紅隊攻擊拓樸</span>
       </div>
-
-      <div class="topo" id="topo">
-        <div class="topo-track">
-          <div class="topo-line"></div>
-          <div class="beam" id="beam"></div>
-
-          <div class="node node-attacker">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff8f99" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-              <rect x="3" y="5" width="18" height="12" rx="1.5"/>
-              <path d="M2 19h20"/>
-              <path d="M8.5 9.5l2 2-2 2"/>
-              <path d="M13 13.5h2.5"/>
-            </svg>
-            <div style="display:flex; flex-direction:column; gap:1px;">
-              <span class="name">攻擊機</span>
-              <span class="caption">紅隊 · kali</span>
-            </div>
-          </div>
-
-          <div class="node">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-400)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-              <rect x="4" y="4.5" width="16" height="6" rx="1.2"/>
-              <rect x="4" y="13.5" width="16" height="6" rx="1.2"/>
-              <circle cx="7.5" cy="7.5" r="0.7" fill="var(--color-neutral-400)" stroke="none"/>
-              <circle cx="7.5" cy="16.5" r="0.7" fill="var(--color-neutral-400)" stroke="none"/>
-              <path d="M17.5 4.5V2.2"/>
-              <circle cx="17.5" cy="1.6" r="0.9" fill="var(--color-neutral-400)" stroke="none"/>
-            </svg>
-            <div style="display:flex; flex-direction:column; gap:1px;">
-              <span class="name">外網機</span>
-              <span class="caption">DMZ · 對外主機</span>
-            </div>
-          </div>
-
-          <div class="node" id="node-internal">
-            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e6e9f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
-              <rect x="4" y="8" width="16" height="11" rx="1.2"/>
-              <circle cx="7.5" cy="13.5" r="0.7" fill="#e6e9f0" stroke="none"/>
-              <path d="M15 8V2.5"/>
-              <path d="M15 2.5l4.5 2-4.5 2z" fill="#ff8f99" stroke="none"/>
-            </svg>
-            <div style="display:flex; flex-direction:column; gap:1px;">
-              <span class="name">內網機</span>
-              <span class="caption">Flag · 須橫向移動</span>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <div class="legend">
-        <span class="swatch"><span class="chip" style="background:#ff4d5e;"></span>攻擊機發起</span>
-        <span class="swatch"><span class="chip" style="border:1px solid var(--color-neutral-700); background:var(--color-neutral-900);"></span>外網機轉送</span>
-        <span class="swatch"><span class="chip" style="background:#4a1520; box-shadow:0 0 8px rgba(255,77,94,0.6);"></span>內網機被命中</span>
+      <div class="panel-empty" id="red-empty">目前無對局中</div>
+      <div class="breach-view" id="red-breach" hidden>
+        <div class="clash-col"><div class="breach-grid" id="origin-grid"></div></div>
+        <div class="clash-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
     </div>
 
     <div class="panel" style="box-shadow:var(--shadow-sm);">
       <div class="timeline-head">
         <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 12px var(--color-accent);"></span>
-        <span class="timeline-title">攻防事件關聯時間軸　LIVE CORRELATION</span>
+        <span class="timeline-title">攻防事件關聯時間軸</span>
         <div class="timeline-legend">
           <span><span style="width:16px; height:3px; background:#37e08a;"></span>快速偵測 &lt;30s</span>
-          <span><span style="width:16px; height:3px; background:#4da6ff;"></span>&gt;30s</span>
-          <span><span style="width:16px; height:0; border-top:2px dashed var(--color-neutral-600);"></span>未被偵測</span>
+          <span><span style="width:16px; height:3px; background:#f2c94c;"></span>延遲偵測 &gt;30s</span>
+          <span><span style="width:16px; height:0; border-top:2px dashed #ff4d5e;"></span>未被偵測</span>
         </div>
       </div>
       <div class="timeline-cols">
@@ -319,19 +283,23 @@
     <div class="panel" style="box-shadow:0 0 0 1px #1f3450;">
       <div class="panel-head">
         <span class="panel-tag" style="color:#8ec6ff;">BLUE</span>
-        <span class="panel-sub">修補進度</span>
-        <span class="panel-note">示意，非真實資料</span>
+        <span class="panel-sub" id="blue-panel-title">藍隊整體修補進度</span>
       </div>
-      <div class="score-row">
-        <span class="score-val" id="blue-score"></span>
-        <span class="score-max">/ <span id="blue-score-max"></span></span>
+      <div class="panel-empty" id="blue-empty">目前無對局中</div>
+
+      <div class="blue-progress" id="blue-patch" hidden>
+        <div class="score-block">
+          <div class="score-row"><span class="score-val" id="blue-score">—</span><span class="score-max">/ <span id="blue-score-max">140</span></span></div>
+          <div class="score-track"><div class="score-fill" id="blue-score-fill"></div></div>
+        </div>
+        <div class="cell-grid" id="blue-cells"></div>
       </div>
-      <div class="score-track"><div class="score-fill" id="score-fill" style="width:0%;"></div></div>
-      <div class="cell-grid" id="blue-cells"></div>
-      <div class="legend">
-        <span class="swatch"><span class="chip" style="background:#2b6fb0;"></span>修補完成</span>
-        <span class="swatch"><span class="chip" style="background:#62b0ff; animation:sweep 1.8s ease-in-out infinite;"></span>修補中</span>
-        <span class="swatch"><span class="chip" style="background:var(--color-neutral-900); border:1px solid var(--color-neutral-800);"></span>未處理</span>
+
+      <!-- 困難模式：不是分數，是五個稽核方向的覆蓋率（見 BLUE.pdf「查清：
+           稽核覆蓋圖」）——查過哪一塊就從暗變亮，不揭露對錯，只給覆蓋率。 -->
+      <div class="audit-coverage" id="blue-audit" hidden>
+        <div class="audit-count">已勘查 <span id="audit-count-val">0</span> / 5</div>
+        <div class="audit-grid" id="audit-grid"></div>
       </div>
     </div>
   </div>
@@ -341,21 +309,15 @@
       <div class="shell-head" style="background:#1d1220; border-color:#3f2430;">
         <span class="dot" style="background:#ff4d5e; box-shadow:0 0 12px #ff4d5e;"></span>
         <span class="title" style="color:#ff8f99;">紅隊終端機　RED SHELL</span>
-        <span class="path">示意，非真實資料</span>
       </div>
-      <div class="shell-body" id="red-shell">
-        <div class="line"><span style="color:#ff6b78;">red@kali-01:~$</span><span class="caret" style="background:#ff6b78;"></span></div>
-      </div>
+      <div class="shell-body" id="red-shell"></div>
     </div>
     <div class="shell" style="box-shadow:0 0 0 1px #1f3450;">
       <div class="shell-head" style="background:#101c2c; border-color:#1f3450;">
         <span class="dot" style="background:#4da6ff; box-shadow:0 0 12px #4da6ff;"></span>
         <span class="title" style="color:#8ec6ff;">藍隊監控日誌　BLUE SHELL</span>
-        <span class="path">示意，非真實資料</span>
       </div>
-      <div class="shell-body" id="blue-shell">
-        <div class="line"><span style="color:#62b0ff;">blue@soc-01:~$</span><span class="caret" style="background:#62b0ff;"></span></div>
-      </div>
+      <div class="shell-body" id="blue-shell"></div>
     </div>
   </div>
 
@@ -366,17 +328,17 @@
 (function () {
   var POLL_MS = 8000;
   var API_KEY = "purple-console.api-base";
-  var TOKEN_KEY = "purple-console.token";
-
-  var MOCK_RED_SHELL = [
-    { time: "—", text: "（無對應資料，見面板圖說）" }
-  ];
-  var MOCK_BLUE_SHELL = [
-    { time: "—", text: "（無對應資料，見面板圖說）" }
-  ];
+  // 靶機淪陷數方塊網格——左邊紅隊攻擊來源、右邊靶機，都匿名、不對應特定
+  // 座位/身分，純粹是「打穿了幾台」的視覺化。目前沒有真實的「攻擊成功」
+  // 事件可以驅動，先用固定格數畫出兩邊全部未亮燈的骨架；之後接上真資料
+  // 時，每來一次新的偵測事件就讓通道播一次光束、點亮右邊對應格子
+  // （.breach-cell.hit），不用重寫版面。
+  // 沒有任何 destination 資訊時的保底格數（見 renderBreachPanel）——
+  // adapters 目前是「假設欄位名」，實際場次如果都抓不到 destination，
+  // 至少讓面板看起來不是空的，不代表真實數字。
+  var BREACH_GRID_FALLBACK = 6;
 
   var apiInput = document.getElementById("api-base");
-  var tokenInput = document.getElementById("token");
   var difficultySel = document.getElementById("difficulty");
   var statusDot = document.getElementById("status-dot");
   var statusText = document.getElementById("status-text");
@@ -391,12 +353,11 @@
   }
 
   function defaultApiBase() {
-    var host = window.location.hostname || "10.167.223.61";
+    var host = window.location.hostname || "localhost";
     return "http://" + host + ":8001";
   }
 
   apiInput.value = localStorage.getItem(API_KEY) || defaultApiBase();
-  tokenInput.value = localStorage.getItem(TOKEN_KEY) || "";
 
   function fmtTime(iso) {
     if (!iso) return "—";
@@ -415,32 +376,71 @@
     return (ms / 1000).toFixed(1) + "s";
   }
 
-  function labelFor(event) {
+  // technique 是 MITRE ATT&CK 編號（如 T1190），觀眾看不懂代表什麼，這裡
+  // 對照翻成中文短稱——只收錄 detections.py 目前 11 條規則會用到的編號，
+  // 沒對照到才顯示原始編號（正常情況不會發生，只是防呆）。
+  var TECHNIQUE_LABELS = {
+    "T1190": "SQL 注入",
+    "T1110": "密碼暴力破解",
+    "T1505": "Webshell 上傳",
+    "T1548": "權限提升",
+    "T1552": "憑證外洩",
+    "T1059": "指令注入",
+    "T1053": "排程持久化",
+    "T1087": "帳號列舉",
+    "T1005": "敏感檔案存取",
+    "T1595": "埠掃描",
+    "T1021": "橫向移動",
+    "T1048": "資料外洩"
+  };
+
+  // event_type 的中文對照——藍隊實際只會出現這兩種（syslog_receiver.py／
+  // forward-blue-authlog.sh 兩個真實來源都只送 blue.log／blue.alert），
+  // red.action 是紅隊沒命中規則時的預設值。沒對照到就顯示原始字串。
+  var EVENT_TYPE_LABELS = {
+    "blue.alert": "已標記告警",
+    "blue.log": "一般紀錄",
+    "blue.event": "藍隊事件",
+    "red.action": "紅隊行動"
+  };
+
+  // 只顯示類型，不顯示完整訊息內容。紅隊優先用 technique 翻譯後的中文
+  // 短稱；沒命中規則、或藍隊事件本來就沒有 technique 概念時，退回
+  // event_type（一樣翻中文）。
+  function typeLabel(event, technique) {
     if (!event) return null;
-    return event.message || event.event_type || "(no message)";
+    if (technique) return TECHNIQUE_LABELS[technique] || technique;
+    var type = event.event_type;
+    return (type && EVENT_TYPE_LABELS[type]) || type || "(unclassified)";
   }
 
-  // /analysis 的 correlations[] -> 畫面用的時間軸列，最新在最上面。
+  // 三類狀態，對應時間軸圖說的三色：快速偵測(綠)／延遲偵測(黃)／未被偵測
+  // (紅)。detection_gap（有比對到藍隊事件，但沒被標記為正式告警）跟
+  // visibility_gap（完全沒比對到）在這裡刻意當同一件事處理——藍隊終究
+  // 沒有正確標記出這次攻擊，不分「完全沒紀錄」跟「有紀錄但沒告警」，都
+  // 算「未被偵測」，不獨立成第四色。藍隊自己的修補進度是另一個完全獨立
+  // 的面板（右側 patch-grid，CTF 式漏洞修補題），跟這條時間軸無關。
   function buildChain(correlations) {
     return correlations.slice().reverse().map(function (c) {
-      var hit = c.status === "hit";
-      var unflagged = c.status === "detection_gap"; // 有比對到，但沒被判定為告警
-      var missed = c.status === "visibility_gap";
-      var fast = hit && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
-      var slow = hit && !fast;
-      var blueLabel = labelFor(c.blue);
-      if (unflagged && blueLabel) blueLabel += "（未標記為偵測）";
+      var fast = c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
+      var slow = c.status === "hit" && !fast;
+      var missed = c.status !== "hit";
       return {
         time: fmtTime(c.red ? c.red.observed_at : null),
-        redLabel: labelFor(c.red) || "(no message)",
-        blueLabel: blueLabel,
-        detected: hit || unflagged,
+        redLabel: typeLabel(c.red, c.technique) || "(unclassified)",
+        blueLabel: missed ? null : typeLabel(c.blue, null),
         missed: missed,
         fast: fast,
-        slow: slow || unflagged,
+        slow: slow,
         latency: fmtLatency(c.latency_ms)
       };
     });
+  }
+
+  function bar(color) {
+    var b = el("span", "bar");
+    b.style.background = "linear-gradient(90deg, " + color + "33, " + color + ")";
+    return b;
   }
 
   function renderTimeline(chain) {
@@ -451,22 +451,16 @@
       row.appendChild(el("span", "time", item.time));
       row.appendChild(el("span", "who", '<span class="dot" style="background:#ff4d5e; box-shadow:0 0 12px rgba(255,77,94,0.6);"></span><span class="label">' + item.redLabel + "</span>"));
       if (item.fast) {
-        var fastBar = el("span", "bar");
-        fastBar.style.background = "linear-gradient(90deg, rgba(55,224,138,0.2), #37e08a)";
-        row.appendChild(fastBar);
+        row.appendChild(bar("#37e08a"));
       } else if (item.slow) {
-        var slowBar = el("span", "bar");
-        slowBar.style.background = "linear-gradient(90deg, rgba(77,166,255,0.2), #4da6ff)";
-        row.appendChild(slowBar);
-      } else if (item.missed) {
-        row.appendChild(el("span", "dash"));
+        row.appendChild(bar("#f2c94c"));
       } else {
-        row.appendChild(el("span", ""));
+        row.appendChild(el("span", "dash"));
       }
-      if (item.detected && item.blueLabel) {
-        row.appendChild(el("span", "who", '<span class="dot" style="background:#4da6ff; box-shadow:0 0 12px rgba(77,166,255,0.6);"></span><span class="label">' + item.blueLabel + "</span>"));
-      } else if (item.missed) {
+      if (item.missed) {
         row.appendChild(el("span", "miss", '<span class="ring"></span><span class="txt">未被偵測</span>'));
+      } else if (item.blueLabel) {
+        row.appendChild(el("span", "who", '<span class="dot" style="background:#4da6ff; box-shadow:0 0 12px rgba(77,166,255,0.6);"></span><span class="label">' + item.blueLabel + "</span>"));
       } else {
         row.appendChild(el("span", ""));
       }
@@ -475,55 +469,133 @@
     });
   }
 
-  // 拓樸光束／藍隊修補格／Shell tail：目前沒有對應的真實資料模型，維持示意，
-  // 只依「有沒有連上、有沒有資料」開關動畫，不隨真實事件內容變化。
-  function renderMockPanels(hasData) {
-    var beam = document.getElementById("beam");
-    var node = document.getElementById("node-internal");
-    document.getElementById("topo").style.opacity = hasData ? "1" : "0.4";
-    beam.style.animation = hasData ? "beamTravel 3.2s ease-in-out infinite" : "none";
-    beam.style.opacity = hasData ? "" : "0";
-    node.style.animation = hasData ? "topoHit 3.2s ease-in-out infinite" : "none";
-
-    var difficulty = difficultySel.value;
-    var blueTotal = difficulty === "困難" ? 7 : 5;
-    var blueDone = hasData ? Math.max(1, Math.round(blueTotal * 0.6)) : 0;
-    var blueActive = hasData ? 1 : 0;
-    var scoreMax = blueTotal * 20;
-    var blueScoreVal = hasData ? Math.round(scoreMax * 0.57) : 0;
-    var scorePct = hasData ? Math.round((blueScoreVal / scoreMax) * 100) : 0;
-
-    document.getElementById("blue-score").textContent = hasData ? String(blueScoreVal) : "—";
-    document.getElementById("blue-score-max").textContent = scoreMax;
-    document.getElementById("score-fill").style.width = scorePct + "%";
-
-    var cellsHost = document.getElementById("blue-cells");
-    cellsHost.innerHTML = "";
-    cellsHost.style.gridTemplateColumns = "repeat(" + blueTotal + ", minmax(0, 1fr))";
-    for (var i = 0; i < blueTotal; i++) {
-      var cls = "cell ";
-      if (!hasData) cls += "cell-idle";
-      else if (i < blueDone) cls += "cell-done";
-      else if (i < blueDone + blueActive) cls += "cell-active";
-      else cls += "cell-idle";
-      cellsHost.appendChild(el("div", cls.trim()));
+  function fillCellGrid(hostId, count) {
+    var host = document.getElementById(hostId);
+    host.innerHTML = "";
+    for (var i = 0; i < count; i++) {
+      host.appendChild(el("div", "breach-cell"));
     }
+  }
 
+  // 左邊紅隊攻擊來源格、右邊靶機格，格數同步，等於目前 correlations 裡
+  // 看到幾個不同的 destination（靶機）——靶機增加/減少，兩邊格子一起變。
+  // destination 是既有欄位（adapters/store 早就在存，見 analysis.py 的
+  // matching 邏輯），不用動後端。沒有任何 destination 資訊時退回保底格數，
+  // 不是真數字。點亮狀態（.hit）目前還沒有真實的「攻擊成功」事件可以
+  // 驅動，一律未亮燈。
+  function distinctDestinationCount(correlations) {
+    var seen = new Set();
+    correlations.forEach(function (c) {
+      var dest = c.red && c.red.destination;
+      if (dest) seen.add(dest);
+    });
+    return seen.size;
+  }
+
+  function renderBreachPanel(correlations) {
+    var count = distinctDestinationCount(correlations || []) || BREACH_GRID_FALLBACK;
+    fillCellGrid("origin-grid", count);
+
+    // 每個靶機是一對方塊（外網／內網），跟藍隊修補格同一套元件。
+    var targetHost = document.getElementById("target-grid");
+    targetHost.innerHTML = "";
+    for (var i = 0; i < count; i++) {
+      var pair = el("div", "patch-pair");
+      pair.appendChild(patchCell());
+      pair.appendChild(el("div", "patch-link"));
+      pair.appendChild(patchCell());
+      targetHost.appendChild(pair);
+    }
+  }
+
+  // 紅隊攻擊拓樸右側靶機格：每格代表一台靶機的其中一台機器（外網／
+  // 內網），亮度用 opacity 代表完成比例（0 = 全暗），目前沒有真實資料，
+  // 一律固定 opacity:0，不編造。
+  function patchCell() {
+    var cell = el("div", "patch-cell");
+    var fill = el("div", "patch-cell-fill");
+    fill.style.opacity = "0";
+    cell.appendChild(fill);
+    return cell;
+  }
+
+  // 藍隊整體修補進度：固定 7 格（blue/scoring-engine 既有設計，vuln1-7，
+  // 滿分 140，見 BLUE.pdf），不分組、不分隱藏獎勵，同一排一起顯示。目前
+  // 沒有真實的每項完成狀態，一律 cell-idle，分數維持「—」，不編造。
+  var BLUE_CHECK_COUNT = 7;
+  var BLUE_MAX_SCORE = 140;
+
+  function renderBlueProgress() {
+    document.getElementById("blue-score").textContent = "—";
+    document.getElementById("blue-score-max").textContent = BLUE_MAX_SCORE;
+    var host = document.getElementById("blue-cells");
+    host.innerHTML = "";
+    // 上三下四，不是平均分欄——7 格排成兩排比排成 3+3+1 三排更緊湊。
+    var rowSizes = [3, 4];
+    var i = 0;
+    rowSizes.forEach(function (size) {
+      var row = el("div", "cell-row");
+      for (var n = 0; n < size && i < BLUE_CHECK_COUNT; n++, i++) {
+        row.appendChild(el("div", "cell cell-idle"));
+      }
+      host.appendChild(row);
+    });
+  }
+
+  // 困難模式的五個稽核方向，文字照 BLUE.pdf「查清：稽核覆蓋圖」原文。
+  // 目前沒有真實的 cmdlog 分類資料，一律未勘查——之後接上真資料時，把
+  // 對應方向的 el 加上 "visited" class、文字換成「已勘查」即可。
+  var AUDIT_AREAS = ["系統帳號", "檔案權限", "排程任務", "資料庫內容", "對外服務設定"];
+
+  function renderAuditCoverage() {
+    document.getElementById("audit-count-val").textContent = "0";
+    var host = document.getElementById("audit-grid");
+    host.innerHTML = "";
+    AUDIT_AREAS.forEach(function (label) {
+      host.appendChild(el("div", "audit-cell", '<span class="audit-label">' + label + '</span><span class="audit-state">未勘查</span>'));
+    });
+  }
+
+  // Shell：目前沒有對應的真實資料模型，一律畫成無資料的靜止狀態（只留
+  // 提示字元＋游標），不編造終端機輸出來假裝有即時活動。
+  function renderIdleShells() {
     var RED_PROMPT = "red@kali-01:~$";
     var BLUE_PROMPT = "blue@soc-01:~$";
     var redHost = document.getElementById("red-shell");
     redHost.innerHTML = "";
-    MOCK_RED_SHELL.forEach(function (l) {
-      redHost.appendChild(el("div", "line", '<span class="time">' + l.time + '</span><span style="color:#ff6b78;">' + RED_PROMPT + '</span><span class="text">' + l.text + "</span>"));
-    });
     redHost.appendChild(el("div", "line", '<span style="color:#ff6b78;">' + RED_PROMPT + '</span><span class="caret" style="background:#ff6b78;"></span>'));
 
     var blueHost = document.getElementById("blue-shell");
     blueHost.innerHTML = "";
-    MOCK_BLUE_SHELL.forEach(function (l) {
-      blueHost.appendChild(el("div", "line", '<span class="time">' + l.time + '</span><span style="color:#62b0ff;">' + BLUE_PROMPT + '</span><span class="text">' + l.text + "</span>"));
-    });
     blueHost.appendChild(el("div", "line", '<span style="color:#62b0ff;">' + BLUE_PROMPT + '</span><span class="caret" style="background:#62b0ff;"></span>'));
+  }
+
+  // 左右兩塊面板（紅／藍隊進度）沒有真實資料模型，能不能顯示只看
+  // 「目前有沒有對局在跑」（hasMatch，來自 /analysis 的 red_actions）——
+  // 有對局才顯示示意用的靜止進度條，沒有就直接講清楚「目前無對局中」，
+  // 不要讓觀眾誤以為空白的清單是資料還沒載入。
+  // 藍隊面板現在有兩種內容：簡單/普通是分數+格子（blue-patch），困難是
+  // 稽核覆蓋率（blue-audit）——兩者互斥，且都只在 hasMatch 時顯示。難度
+  // 切換不影響「有沒有對局」，所以另外存 lastHasMatch，切換難度時重算
+  // 一次可見度就好，不用重新打 API。
+  var lastHasMatch = false;
+
+  function isHardMode() {
+    return difficultySel.value === "困難";
+  }
+
+  function updateBluePanelMode() {
+    document.getElementById("blue-panel-title").textContent = isHardMode() ? "藍隊稽核覆蓋率" : "藍隊整體修補進度";
+    document.getElementById("blue-patch").hidden = !(lastHasMatch && !isHardMode());
+    document.getElementById("blue-audit").hidden = !(lastHasMatch && isHardMode());
+  }
+
+  function setPanelState(hasMatch) {
+    lastHasMatch = hasMatch;
+    document.getElementById("red-empty").hidden = hasMatch;
+    document.getElementById("red-breach").hidden = !hasMatch;
+    document.getElementById("blue-empty").hidden = hasMatch;
+    updateBluePanelMode();
   }
 
   function setStatus(state, text) {
@@ -533,16 +605,13 @@
 
   async function refresh() {
     var apiBase = apiInput.value.trim().replace(/\/$/, "");
-    var token = tokenInput.value.trim();
     localStorage.setItem(API_KEY, apiBase);
-    localStorage.setItem(TOKEN_KEY, token);
-
-    var headers = {};
-    if (token) headers["Authorization"] = "Bearer " + token;
 
     try {
-      var res = await fetch(apiBase + "/analysis?caller=purple&limit=5000", { headers: headers });
-      if (!res.ok) throw new Error("HTTP " + res.status + (res.status === 401 ? "（purple clearance 需要正確的 bearer token）" : ""));
+      // caller 不帶、預設 public——這頁是給全場觀眾看的公開戰況板，不需要
+      // purple token，後端 /analysis 本來就只會回傳 hit 列給 public caller。
+      var res = await fetch(apiBase + "/analysis?limit=5000");
+      if (!res.ok) throw new Error("HTTP " + res.status);
       var data = await res.json();
 
       errorBanner.hidden = true;
@@ -551,6 +620,7 @@
       var correlations = data.correlations || [];
       var hasData = (data.red_actions || 0) > 0;
       emptyBanner.hidden = hasData;
+      setPanelState(hasData);
 
       document.getElementById("stat-actions").textContent = data.red_actions ?? "—";
       document.getElementById("stat-detected").textContent = hasData ? (data.detected + " / " + data.red_actions) : "—";
@@ -561,19 +631,16 @@
       document.getElementById("stat-updated").textContent = new Date().toLocaleTimeString("zh-TW", { hour12: false });
 
       renderTimeline(buildChain(correlations));
-      renderMockPanels(hasData);
+      renderBreachPanel(correlations);
     } catch (err) {
       setStatus("err", "連線失敗");
       errorBanner.hidden = false;
-      errorBanner.textContent = "抓不到 " + apiBase + "/analysis：" + err.message + "（確認 API 位址、CORS、bearer token）";
+      errorBanner.textContent = "抓不到 " + apiBase + "/analysis：" + err.message + "（確認 API 位址、CORS）";
     }
   }
 
   document.getElementById("reconnect").addEventListener("click", refresh);
-  difficultySel.addEventListener("change", function () {
-    // emptyBanner.hidden === true 就是最近一次 refresh() 判斷「有資料」的狀態。
-    renderMockPanels(emptyBanner.hidden);
-  });
+  difficultySel.addEventListener("change", updateBluePanelMode);
 
   // 依視窗寬度自動縮放 1920×1080 的看板，桌面/筆電開啟時不用橫向捲動就能看到全貌。
   function fitStage() {
@@ -587,6 +654,10 @@
   window.addEventListener("resize", fitStage);
   fitStage();
 
+  renderBreachPanel([]);
+  renderBlueProgress();
+  renderAuditCoverage();
+  renderIdleShells();
   refresh();
   setInterval(refresh, POLL_MS);
 })();

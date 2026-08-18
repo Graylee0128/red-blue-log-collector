@@ -1,4 +1,7 @@
+from datetime import datetime, timedelta, timezone
+
 from rbcollector.disclosure import (
+    GAP_REVEAL_DELAY_SECONDS,
     clearance,
     visibility_for_correlation,
     visibility_rank,
@@ -6,16 +9,31 @@ from rbcollector.disclosure import (
 )
 
 
-def test_hit_is_public():
-    assert visibility_for_correlation({"status": "hit"}) == "public"
+def _iso(seconds_ago: float) -> str:
+    return (datetime.now(timezone.utc) - timedelta(seconds=seconds_ago)).isoformat()
 
 
-def test_detection_gap_is_purple_only():
+def test_hit_is_immediately_public():
+    # hit 不用等延遲，就算紅隊行動剛發生也立刻公開。
+    row = {"status": "hit", "red": {"observed_at": _iso(0)}}
+    assert visibility_for_correlation(row) == "public"
+
+
+def test_recent_gap_stays_purple_only():
+    # 2026-08-18 起 gap 也會公開，但要等 GAP_REVEAL_DELAY_SECONDS 秒——剛
+    # 發生的 gap 不能立刻秀給觀眾，不然藍隊照著補救等於洩題。
+    row = {"status": "detection_gap", "red": {"observed_at": _iso(5)}}
+    assert visibility_for_correlation(row) == "purple"
+
+
+def test_gap_becomes_public_once_delay_passes():
+    row = {"status": "visibility_gap", "red": {"observed_at": _iso(GAP_REVEAL_DELAY_SECONDS + 5)}}
+    assert visibility_for_correlation(row) == "public"
+
+
+def test_gap_without_observed_at_fails_closed_to_purple():
+    # 算不出經過多久，寧可先當成沒過延遲，不要提早洩漏。
     assert visibility_for_correlation({"status": "detection_gap"}) == "purple"
-
-
-def test_visibility_gap_is_purple_only():
-    assert visibility_for_correlation({"status": "visibility_gap"}) == "purple"
 
 
 def test_purple_outranks_public():

@@ -7,6 +7,8 @@ purple-only rows to everyone. These tests exercise the actual routes.
 """
 from __future__ import annotations
 
+from datetime import datetime, timezone
+
 import pytest
 from fastapi.testclient import TestClient
 
@@ -60,11 +62,34 @@ def client(monkeypatch):
     return TestClient(server_module.app)
 
 
-def test_analysis_public_default_hides_gap_rows(client):
+def test_analysis_public_default_sees_gap_rows(client):
+    # 2026-08-18 起 gap 也是 public 可見（見 disclosure.py 模組
+    # docstring）——Battleboard 是公開戰況板，「藍隊有沒有抓到」本身就是
+    # 要秀給觀眾看的資訊。
     resp = client.get("/analysis")
     assert resp.status_code == 200
     statuses = {row["status"] for row in resp.json()["correlations"]}
-    assert statuses == {"hit"}
+    assert statuses == {"hit", "visibility_gap"}
+
+
+def test_analysis_public_hides_gap_row_that_just_happened(client):
+    # gap 揭露有延遲（見 disclosure.py 的 GAP_REVEAL_DELAY_SECONDS）——剛
+    # 發生的紅隊行動就算比對不到藍隊事件，public 這一刻也還不該看到，不
+    # 然等於把「藍隊漏了」即時洩題給藍隊照著補救。
+    fresh_gap = [{
+        "event_id": "evt-red-3", "team": "red", "observed_at": datetime.now(timezone.utc).isoformat(),
+        "source_ip": "10.0.0.12", "destination": "10.0.0.22", "correlation_id": "c-1",
+        "event_type": "red.action", "message": "just happened",
+    }]
+    server_module.store = FakeStore(HIT_PAIR + fresh_gap)
+
+    public_statuses = {row["status"] for row in client.get("/analysis").json()["correlations"]}
+    assert public_statuses == {"hit"}
+
+    # purple 不受揭露延遲影響，同一時刻已經看得到。
+    purple_resp = client.get("/analysis?caller=purple", headers={"Authorization": "Bearer secret"})
+    purple_statuses = {row["status"] for row in purple_resp.json()["correlations"]}
+    assert "visibility_gap" in purple_statuses
 
 
 def test_analysis_purple_without_token_rejected(client):
