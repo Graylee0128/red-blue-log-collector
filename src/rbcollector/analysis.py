@@ -4,6 +4,8 @@ from datetime import datetime
 from statistics import median
 from typing import Any
 
+from rbcollector.detections import evaluate_detections
+
 
 def correlate(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     reds = [e for e in events if e.get("team") == "red"]
@@ -29,6 +31,17 @@ def correlate(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
     rows = correlate(events)
+
+    # 資料驅動偵測規則（取代 cyber 的 Grafana 告警規則，見 detections.py）
+    # 幫每一列標上紅隊事件命中的技法，不動上面已經算好的
+    # hit/detection_gap/visibility_gap 判定。
+    technique_hits = evaluate_detections(events)
+    for row in rows:
+        tag = technique_hits.get((row["red"] or {}).get("event_id"))
+        row["rule_id"] = tag["rule_id"] if tag else None
+        row["technique"] = tag["technique"] if tag else None
+        row["severity"] = tag["severity"] if tag else None
+
     latencies = [r["latency_ms"] for r in rows if r["latency_ms"] is not None and r["status"] == "hit"]
     hits = sum(r["status"] == "hit" for r in rows)
     detection_gaps = sum(r["status"] == "detection_gap" for r in rows)

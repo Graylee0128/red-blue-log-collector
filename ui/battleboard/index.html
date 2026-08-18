@@ -1,0 +1,73 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Battleboard</title>
+<link rel="stylesheet" href="../assets/base.css">
+<style>
+  .header {
+    display: flex; align-items: center; justify-content: space-between; gap: 16px;
+    background: linear-gradient(90deg, var(--red-dim), var(--panel-board) 40%, var(--panel-board) 60%, var(--blue-dim));
+    border: 1px solid var(--border); border-radius: 10px;
+    padding: 18px 28px; margin-bottom: 16px; flex-wrap: wrap;
+  }
+  .header .vs { font-size: 22px; font-weight: 800; letter-spacing: 0.02em; }
+  .header .vs .r { color: var(--red); }
+  .header .vs .b { color: var(--blue); }
+  .header .meta { font-size: 15px; color: var(--muted); font-weight: 600; }
+  .chain { display: flex; gap: 8px; flex-wrap: wrap; }
+  .dot {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 13px; padding: 4px 10px; border-radius: 999px; border: 1px solid var(--border);
+  }
+  .dot.pending { color: var(--muted); }
+  .dot.defended { color: var(--green); border-color: #1f6b47; background: #0f2a1c; }
+  .disclosure-note {
+    margin-top: 14px; padding: 10px 12px; background: #1a1530; border: 1px solid #3a2f66;
+    border-radius: 6px; font-size: 12px; color: #c9b8ff;
+  }
+</style>
+</head>
+<body class="board">
+
+<div class="header">
+  <div class="vs"><span class="r">🔴 RED</span> vs <span class="b">🔵 BLUE</span></div>
+  <div class="meta" id="last-updated">—</div>
+</div>
+
+<div id="banner" class="banner"></div>
+
+<div class="grid c3">
+  <div class="panel">
+    <div class="panel-title">Detection</div>
+    <div class="stat-row">
+      <span>Detected</span>
+      <span class="val" id="score-detected">—</span>
+    </div>
+    <div class="stat-row">
+      <span>Detection rate</span>
+      <span class="val" id="score-rate">—</span>
+    </div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Attack chain (anonymized)</div>
+    <div class="chain" id="chain"></div>
+    <div class="disclosure-note" id="disclosure-note"></div>
+  </div>
+
+  <div class="panel">
+    <div class="panel-title">Stats</div>
+    <div id="defense"></div>
+  </div>
+</div>
+
+<div class="panel">
+  <div class="panel-title"><span class="dot-live on" id="live"></span>Timeline (detected only)</div>
+  <div id="timeline"></div>
+</div>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

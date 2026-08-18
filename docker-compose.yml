@@ -17,6 +17,10 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
+      # Shared bearer token required on POST /ingest/*. Empty/unset = auth
+      # disabled (local/dev only). Set this before exposing the port beyond
+      # localhost -- see "Exposing to other VMs" in README.md.
+      INGEST_TOKEN: ${INGEST_TOKEN:-}
     ports:
       - "8001:8000"
     depends_on:
@@ -31,7 +35,7 @@ services:
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
-      # 沒開這兩個，Purple Console 的 iframe 會撞到 cyber 那邊記過的同一個坑：
+      # 沒開這兩個，之後有任何頁面想嵌 Grafana 面板都會撞到 cyber 那邊記過的同一個坑：
       # Grafana 預設拒絕被嵌 iframe（X-Frame-Options: deny），且未登入直接
       # 跳登入牆，iframe 裡的使用者連帳密在哪都不知道。
       GF_SECURITY_ALLOW_EMBEDDING: "true"
@@ -44,15 +48,6 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-    restart: unless-stopped
-
-  # 獨立於 collector API 之外的靜態頁面：只嵌入 Grafana，不呼叫任何後端。
-  purple-console:
-    image: nginx:1.27-alpine
-    volumes:
-      - ./ui/purple-console:/usr/share/nginx/html:ro
-    ports:
-      - "8090:80"
     restart: unless-stopped
 
 volumes:

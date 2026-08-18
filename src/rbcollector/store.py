@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 from contextlib import contextmanager
+from datetime import datetime, timedelta
 from typing import Any, Iterator
 
 import psycopg
@@ -90,6 +91,44 @@ class EventStore:
                 )
             conn.commit()
             return inserted
+
+    def get_event(self, event_id: str) -> dict[str, Any] | None:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT event FROM normalized_events WHERE event_id=%s", (event_id,)
+            ).fetchone()
+        return row[0] if row else None
+
+    def context(self, event_id: str, window_minutes: int = 5) -> list[dict[str, Any]] | None:
+        """`event_id` 的 `observed_at` 前後 `window_minutes` 內、兩隊皆包含
+        的原始 payload。`event_id` 不存在時回傳 None——跟「查得到但確實
+        是空清單」要分開，不能混為一談。"""
+        event = self.get_event(event_id)
+        if event is None:
+            return None
+        observed_at = datetime.fromisoformat(str(event["observed_at"]).replace("Z", "+00:00"))
+        window = timedelta(minutes=window_minutes)
+
+        with self._connect() as conn:
+            rows = conn.execute(
+                """
+                SELECT r.team, r.payload, r.received_at, n.observed_at
+                FROM raw_events r
+                JOIN normalized_events n ON n.event_id = r.event_id
+                WHERE n.observed_at BETWEEN %s AND %s
+                ORDER BY n.observed_at ASC
+                """,
+                (observed_at - window, observed_at + window),
+            ).fetchall()
+        return [
+            {
+                "team": team,
+                "payload": payload,
+                "observed_at": row_observed_at.isoformat(),
+                "received_at": received_at.isoformat(),
+            }
+            for team, payload, received_at, row_observed_at in rows
+        ]
 
     def list_events(self, team: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 5000))
