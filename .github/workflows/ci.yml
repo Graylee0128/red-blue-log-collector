@@ -24,3 +24,33 @@ jobs:
 
       - name: pytest (adapters + analysis)
         run: pytest -v
+
+  # 打包成 image 給 Metis 拉：只在 push 進 main 時發布（PR 不發，避免還沒審查的東西
+  # 被拉走），用內建的 GITHUB_TOKEN 推 GHCR，不用另外存 Docker Hub 帳密。
+  publish-image:
+    needs: test
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # latest 給 Metis 的 yaml 追蹤最新版；sha 那個 tag 讓每一次發布都可回溯，
+          # 出事時能釘住某一版重現，不用只能猜「latest 是哪次 commit 的」。
+          tags: |
+            ghcr.io/${{ github.repository_owner }}/red-blue-log-collector:latest
+            ghcr.io/${{ github.repository_owner }}/red-blue-log-collector:${{ github.sha }}
