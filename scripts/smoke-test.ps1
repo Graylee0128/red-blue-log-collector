@@ -22,6 +22,8 @@ param(
 $ErrorActionPreference = "Stop"
 $BaseUrl = "http://localhost:8000"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
+$env:INGEST_TOKEN = "smoke-test-token"
+$AuthHeaders = @{ Authorization = "Bearer $($env:INGEST_TOKEN)" }
 
 function Fail($message) {
   Write-Host "FAIL: $message" -ForegroundColor Red
@@ -47,15 +49,25 @@ for ($i = 0; $i -lt 30; $i++) {
 if (-not $ready) { Fail "/healthz never returned ok within 60s" }
 Write-Host "healthz OK" -ForegroundColor Green
 
-Write-Host "== POST examples/red-event.json -> /ingest/red ==" -ForegroundColor Cyan
+Write-Host "== POST /ingest/red without token -> expect 401 ==" -ForegroundColor Cyan
 $redEvent = Get-Content "$RepoRoot/examples/red-event.json" -Raw
-$redResp = Invoke-RestMethod -Uri "$BaseUrl/ingest/red" -Method Post -ContentType "application/json" -Body $redEvent
+try {
+  Invoke-RestMethod -Uri "$BaseUrl/ingest/red" -Method Post -ContentType "application/json" -Body $redEvent -ErrorAction Stop
+  Fail "expected 401 without bearer token, request succeeded"
+} catch {
+  $status = $_.Exception.Response.StatusCode.value__
+  if ($status -ne 401) { Fail "expected 401 without bearer token, got $status" }
+}
+Write-Host "unauthenticated ingest correctly rejected (401)" -ForegroundColor Green
+
+Write-Host "== POST examples/red-event.json -> /ingest/red ==" -ForegroundColor Cyan
+$redResp = Invoke-RestMethod -Uri "$BaseUrl/ingest/red" -Method Post -ContentType "application/json" -Headers $AuthHeaders -Body $redEvent
 if ($redResp.inserted -ne $true) { Fail "red event was not inserted: $($redResp | ConvertTo-Json -Depth 5)" }
 Write-Host "red event inserted: $($redResp.event.event_id)" -ForegroundColor Green
 
 Write-Host "== POST examples/blue-event.json -> /ingest/blue ==" -ForegroundColor Cyan
 $blueEvent = Get-Content "$RepoRoot/examples/blue-event.json" -Raw
-$blueResp = Invoke-RestMethod -Uri "$BaseUrl/ingest/blue" -Method Post -ContentType "application/json" -Body $blueEvent
+$blueResp = Invoke-RestMethod -Uri "$BaseUrl/ingest/blue" -Method Post -ContentType "application/json" -Headers $AuthHeaders -Body $blueEvent
 if ($blueResp.inserted -ne $true) { Fail "blue event was not inserted: $($blueResp | ConvertTo-Json -Depth 5)" }
 Write-Host "blue event inserted: $($blueResp.event.event_id)" -ForegroundColor Green
 
