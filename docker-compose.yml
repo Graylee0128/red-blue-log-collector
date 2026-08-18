@@ -17,6 +17,10 @@ services:
     build: .
     environment:
       DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
+      # Shared bearer token required on POST /ingest/*. Empty/unset = auth
+      # disabled (local/dev only). Set this before exposing the port beyond
+      # localhost -- see "Exposing to other VMs" in README.md.
+      INGEST_TOKEN: ${INGEST_TOKEN:-}
     ports:
       - "8000:8000"
     depends_on:

@@ -14,7 +14,24 @@ change when a real provider schema shows up.
 | POST | `/ingest/blue` | Accept one Blue team event (any JSON object) |
 | GET | `/events?team=red\|blue&limit=` | Normalized events for one team only |
 | GET | `/timeline?limit=` | Merged, time-ordered Red+Blue normalized events |
-| GET | `/analysis?limit=` | Correlated Red→Blue detections + latency/gap summary |
+| GET | `/analysis?limit=&caller=public\|purple` | Correlated Red→Blue detections + latency/gap summary, clearance-filtered |
+| GET | `/events/{event_id}/context?caller=public\|purple&window_minutes=` | Raw payload context window around one event, clearance-filtered |
+
+## Authentication
+
+`POST /ingest/red` and `POST /ingest/blue` require an `Authorization: Bearer
+<token>` header whenever the collector's `INGEST_TOKEN` environment variable
+is set. A missing or wrong token returns `401`. If `INGEST_TOKEN` is unset
+(the local/dev default), no auth is enforced. See
+[Exposing to other VMs](../README.md#exposing-to-other-vms) in the README.
+
+`caller=purple` on `/analysis` and `/events/{event_id}/context` requires the
+same bearer token — `caller` is a client-supplied query parameter, so
+without this check anyone could pass `?caller=purple` and read purple-only
+data. `caller=public` (the default) needs no token; it's already the
+filtered/safe view. There's no separate purple-specific secret: holding the
+ingest token is what "being a legitimate Red/Blue/purple consumer" means in
+this collector's single-shared-secret model.
 
 `/ingest/*` accepts **any JSON object** — there is no fixed producer schema.
 The adapter looks for a set of known field names (aliases below) and falls
@@ -123,6 +140,35 @@ A matched pair is a:
 
 `/analysis` also reports `detection_rate`, `mttd_p50_ms`, and `mttd_p95_ms`
 (latency computed only over `hit` pairs).
+
+The `correlations` array itself is clearance-filtered: `detection_gap` and
+`visibility_gap` rows carry full raw Red/Blue event detail and are dropped
+entirely unless the caller passes `?caller=purple` with a valid bearer
+token (see [Authentication](#authentication)) — the default `public` view
+only ever sees `hit` rows. The aggregate numbers (`detection_rate`,
+`mttd_*`, gap counts) are not filtered; only the per-row detail is.
+
+## Detection rules
+
+Each correlation row is additionally tagged with `rule_id`, `technique`
+(an ATT&CK ID like `T1190`), and `severity` when the **red** side of the
+pair matches one of the data-driven rules in `src/rbcollector/detections.py`
+(standalone replacement for cyber's Grafana alert rules -- no
+Grafana/Loki/Prometheus deployed here). All three are `null` when nothing
+matched. This tagging never changes a row's `hit`/`detection_gap`/
+`visibility_gap` status, only adds context to it.
+
+## Evidence context
+
+`GET /events/{event_id}/context` returns the raw ingest payloads (both
+teams) observed within `window_minutes` (default 5) of the given event's
+`observed_at`, pulled from the `raw_events` table -- not a separate
+telemetry backend. `caller` decides visibility (see
+`src/rbcollector/disclosure.py`): `public` always gets an empty `lines`
+list (raw payloads are purple-only telemetry detail); `purple` sees
+everything, but only with a valid bearer token (see
+[Authentication](#authentication) -- `caller` alone isn't proof of
+clearance). An unknown `event_id` is a 404, not an empty result.
 
 ## Example
 
