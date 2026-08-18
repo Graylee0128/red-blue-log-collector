@@ -25,13 +25,13 @@ Cyber-range-specific concepts (exercise/scenario, Grafana webhook lifecycle, res
 
 ```bash
 docker compose up -d --build
-curl http://localhost:8000/healthz
+curl http://localhost:8001/healthz
 ```
 
 API docs:
 
 ```text
-http://localhost:8000/docs
+http://localhost:8001/docs
 ```
 
 ## Smoke test
@@ -48,7 +48,7 @@ full pipeline actually produces a correlated `hit` on `/timeline` and
 ## Red ingestion
 
 ```bash
-curl -X POST http://localhost:8000/ingest/red \
+curl -X POST http://localhost:8001/ingest/red \
   -H 'Content-Type: application/json' \
   -d '{
     "timestamp":"2026-08-17T11:00:00+08:00",
@@ -62,7 +62,7 @@ curl -X POST http://localhost:8000/ingest/red \
 ## Blue ingestion
 
 ```bash
-curl -X POST http://localhost:8000/ingest/blue \
+curl -X POST http://localhost:8001/ingest/blue \
   -H 'Content-Type: application/json' \
   -d '{
     "time":"2026-08-17T11:00:05+08:00",
@@ -76,14 +76,14 @@ curl -X POST http://localhost:8000/ingest/blue \
 ## Query merged timeline
 
 ```bash
-curl 'http://localhost:8000/timeline?limit=500'
+curl 'http://localhost:8001/timeline?limit=500'
 ```
 
 Or one side only:
 
 ```bash
-curl 'http://localhost:8000/events?team=red'
-curl 'http://localhost:8000/events?team=blue'
+curl 'http://localhost:8001/events?team=red'
+curl 'http://localhost:8001/events?team=blue'
 ```
 
 ## Grafana

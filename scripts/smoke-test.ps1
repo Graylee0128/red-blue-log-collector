@@ -20,7 +20,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$BaseUrl = "http://localhost:8000"
+$BaseUrl = "http://localhost:8001"
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 
 function Fail($message) {
