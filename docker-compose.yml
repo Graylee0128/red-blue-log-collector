@@ -67,5 +67,16 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # 獨立的 Battleboard 風格戰況板頁面（跟 8001/ui/purple、/ui/battleboard 那套
+  # cyber 沿革的分頁式介面並存，用途不同：這個是給投影/大螢幕看戰況用的，
+  # 資料是打 collector 的 /analysis API，不是自己算的）。純靜態頁，沒有後端。
+  purple-console:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./ui/purple-console:/usr/share/nginx/html:ro
+    ports:
+      - "8090:80"
+    restart: unless-stopped
+
 volumes:
   collector-db:

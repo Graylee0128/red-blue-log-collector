@@ -121,6 +121,43 @@ pattern (blue-team rows that read as a detection only; never a bare red
 action, which is exactly what a `visibility_gap` is). Aggregate-only panels
 (counts, distributions, timeseries) don't need this restriction.
 
+## Purple Console (battleboard)
+
+```bash
+docker compose up -d --build purple-console
+```
+
+Open `http://<host>:8090`. A standalone, self-contained battleboard page
+(no external JS/CSS deps beyond Google Fonts, no backend of its own) —
+served by its own nginx container, separate from the API and from
+`/ui/purple/` and `/ui/battleboard/` below. It's for a different use case:
+a projector/big-screen overview, not the tabbed analyst console.
+
+The top stat row and the center correlation timeline are **real** —
+polled from `GET /analysis?caller=purple` every 8s (set the collector API
+URL and, if `INGEST_TOKEN` is configured, a bearer token in the controls
+bar; both persist in `localStorage`). Everything else on the board — the
+attacker/external/internal topology, the blue patch grid/score, the
+red/blue shell tails — has **no backing data model yet** and stays
+demo/mock, clearly labeled as such on each panel. Wiring those up for real
+needs: an IP-to-role mapping (attacker vs. DMZ vs. internal), a real
+scoring source, and a raw-log-tail endpoint respectively.
+
+`caller=purple` matters here specifically because `detection_gap` /
+`visibility_gap` rows are purple-clearance-only (see the disclosure note
+above) — with `caller=public` (or no token when `INGEST_TOKEN` is set) the
+timeline would only ever show hits, silently hiding every gap, which
+defeats the point of a gap-visibility board.
+
+## `/ui/purple/` and `/ui/battleboard/`
+
+Served directly by the collector (`src/rbcollector/server.py` mounts
+`ui/` at `/ui`) — a tabbed analyst console (Coverage / Drilldown /
+Exercise Report) and a plainer battleboard, both cyber-derived and
+already wired to `/analysis` with real clearance handling. Coexists with
+the standalone Purple Console above; which one(s) stay long-term is still
+open.
+
 ## Exposing to other VMs
 
 `docker-compose.yml`'s `"8001:8000"` port mapping already binds to all

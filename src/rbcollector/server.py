@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 from .adapters import blue, red
@@ -15,6 +16,19 @@ from .store import EventStore
 
 app = FastAPI(title="Red/Blue Log Collector", version="0.1.0")
 store = EventStore.from_env()
+
+# Purple Console (ui/purple-console/, served separately on :8090) is a
+# different origin fetching this read-only API from the browser -- no
+# cookies involved, and every read endpoint already enforces its own
+# clearance check (require_purple_clearance), so opening CORS here doesn't
+# widen what a caller can see, only where the request is allowed to come
+# from.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET"],
+    allow_headers=["*"],
+)
 
 # 紫隊 Console／Battleboard 骨架（cyber 沿革見 docs/COPY_FROM_CYBER.md）——
 # 直接從磁碟served，沒有身分驗證、沒有建置步驟。repo 根目錄是這個檔案
