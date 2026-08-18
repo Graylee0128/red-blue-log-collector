@@ -174,7 +174,9 @@
   /* 危險度高的攻擊——box-shadow 疊一圈亮框＋外散光，不用 border 是為了
      不影響格線寬度計算（跟其他列的 padding/寬度保持一致）。severity 是
      detections.py 每條規則自己定義的真實資料，不是編的。 */
-  .t-row .who.severity-high { padding: 3px 10px; margin: -3px 0; border-radius: 8px; box-shadow: 0 0 0 1px #fff6d1, 0 0 10px rgba(255,246,209,0.55); }
+  /* padding 跟 margin 用等值抵銷——亮框往外擴張，但裡面的紅點/文字位置
+     跟沒有亮框的列完全一樣，不會因為有沒有 severity-high 而位移。 */
+  .t-row .who.severity-high { padding: 3px 8px; margin: -3px -8px; border-radius: 8px; box-shadow: 0 0 0 1px #fff6d1, 0 0 10px rgba(255,246,209,0.55); }
   .t-row .time { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 15px; color: var(--color-neutral-500); }
   .t-row .who { display: flex; align-items: center; gap: 11.2px; overflow: hidden; }
   .t-row .who .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
