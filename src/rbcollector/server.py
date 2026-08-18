@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-from pathlib import Path
 from typing import Any, Literal
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.staticfiles import StaticFiles
 
 from .adapters import blue, red
 from .analysis import summarize
@@ -29,17 +27,6 @@ app.add_middleware(
     allow_methods=["GET"],
     allow_headers=["*"],
 )
-
-# 紫隊 Console／Battleboard 骨架（cyber 沿革見 docs/COPY_FROM_CYBER.md）——
-# 直接從磁碟served，沒有身分驗證、沒有建置步驟。repo 根目錄是這個檔案
-# 往上兩層（src/rbcollector/server.py -> repo root）；Dockerfile 把 ui/
-# 跟 src/ 一起複製進容器，所以路徑解析在本機跟容器裡是一致的。用
-# `is_dir()` 判斷再掛載，這樣沒有 ui/ 的 checkout／image（例如未來只發
-# package 不含前端）import 時不會直接炸掉。
-_UI_DIR = Path(__file__).resolve().parents[2] / "ui"
-if _UI_DIR.is_dir():
-    app.mount("/ui", StaticFiles(directory=_UI_DIR, html=True), name="ui")
-
 
 @app.on_event("startup")
 def startup() -> None:
