@@ -27,6 +27,39 @@ The standalone collector intentionally removes or optionalizes:
 - response-agent/containment execution
 - range scoring/UI/admission logic
 
+## issue #3: purple detection/scoring line migration
+
+Second migration pass (issue #3), after Metis took over admission/seat
+provisioning and cyber's own admission/range_core stepped back. Six items,
+all landed:
+
+- `deploy/grafana/provisioning/alerting/rules.yaml` (9→11 Loki/Prometheus
+  rules) → `src/rbcollector/detections.py`: same match/window/threshold
+  semantics, rewritten as a declarative rule list evaluated directly
+  against `normalized_events` -- no Grafana/Loki/Prometheus deployed.
+  Two intentional detection gaps (account-discovery, egress-anomaly)
+  carried over unchanged, not "completed".
+- `src/purple/harness/waiting.py` → `tests/harness/waiting.py`: near-verbatim,
+  it was already schema-agnostic.
+- `src/purple/harness/schema.py` → `tests/harness/schema.py`: rewritten to
+  validate `NormalizedEvent`'s shape instead of cyber's Core Event contract.
+- `purple/evidence/resolver.py` + `backends.py` → `src/rbcollector/evidence.py`
+  + `EventStore.context()`: collapses to one store query against this
+  repo's own `raw_events` table -- no pluggable Loki backend needed.
+- `disclosure/clearance.py` + `event_visibility.py` → `src/rbcollector/disclosure.py`:
+  4-tier clearance (`public < blue < purple < instructor`) collapsed to 2
+  (`public` vs `purple`); a correlation row's visibility is derived from
+  its `hit`/`gap` status, not declared by the caller.
+- `ui/purple/` + `ui/battleboard/` + `ui/assets/` → same paths here: layout
+  skeleton kept, cyber-specific plumbing stripped (service-token gateway,
+  Action Registry, SSE live stream, #153 Campaign Experience Layer, Range
+  Core scoring). See the header comment in each `app.js` for what changed
+  and why.
+
+Grafana/Loki/Prometheus themselves are not deployed here (deliberate --
+see detections.py above). `purple/response/agent.py` (automatic
+containment) was not migrated -- out of scope for this repo.
+
 ## Standalone additions
 
 Runtime code lives in `src/rbcollector/` and adds:

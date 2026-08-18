@@ -1,0 +1,189 @@
+/* Shared design vocabulary for the purple Console and Battleboard screens.
+ *
+ * Copied unchanged from cyber's ui/assets/base.css (issue #3 migration) --
+ * pure layout/color vocabulary, no cyber-specific coupling. Two background
+ * tones are intentional: Console-style screens (analyst, close-up,
+ * information-dense) use --bg; Battleboard (projected, distant, contrast
+ * over density) uses --bg-board via body.board. */
+
+:root {
+  --bg: #0f1420;
+  --bg-board: #06070d;
+  --panel: #161d2e;
+  --panel-board: #0e1120;
+  --border: #2a3348;
+  --text: #e6e9f0;
+  --muted: #8b93a7;
+
+  --red: #ff4d5e;
+  --red-dim: #3a1620;
+  --blue: #4da6ff;
+  --blue-dim: #16273a;
+  --green: #37e08a;
+  --amber: #ffc94d;
+
+  --detected-bg: #143a26;
+  --detected-fg: #4ade80;
+  --missed-bg: #3a1616;
+  --missed-fg: #f87171;
+  --unknown-bg: #3a3016;
+  --unknown-fg: #fbbf24;
+  --na-bg: #232a3a;
+  --na-fg: #8b93a7;
+}
+
+* { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: -apple-system, "Segoe UI", "Noto Sans TC", sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  padding: 24px;
+}
+
+body.board { background: var(--bg-board); }
+body.board .panel { background: var(--panel-board); border-radius: 10px; }
+
+a { color: var(--blue); }
+
+h1 { font-size: 20px; margin: 0 0 4px; }
+.sub { color: var(--muted); font-size: 13px; margin-bottom: 20px; }
+
+/* ---- layout ---- */
+
+.topbar {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 16px; margin-bottom: 16px; flex-wrap: wrap;
+}
+.topbar .who { font-size: 13px; color: var(--muted); }
+.topbar .who b { color: var(--text); }
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 20px;
+}
+.panel + .panel { margin-top: 16px; }
+.panel-title {
+  font-size: 12px; color: var(--muted); text-transform: uppercase;
+  letter-spacing: 0.08em; margin-bottom: 14px; font-weight: 700;
+}
+
+.grid { display: grid; gap: 16px; }
+.grid.c2 { grid-template-columns: 1fr 1fr; }
+.grid.c3 { grid-template-columns: 1fr 2fr 1fr; }
+.grid.sidebar { grid-template-columns: 2fr 1fr; }
+@media (max-width: 900px) {
+  .grid.c2, .grid.c3, .grid.sidebar { grid-template-columns: 1fr; }
+}
+
+/* ---- table ---- */
+
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--border); vertical-align: top; }
+th {
+  color: var(--muted); font-weight: 600; font-size: 12px;
+  text-transform: uppercase; letter-spacing: 0.04em;
+}
+tr.clickable { cursor: pointer; }
+tr.clickable:hover { background: #1d2436; }
+th:last-child, td:last-child { white-space: nowrap; }
+
+/* ---- badges: icon + text double-encoded (colorblind-safe) ---- */
+
+.badge {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 500;
+}
+.badge.detected { background: var(--detected-bg); color: var(--detected-fg); }
+.badge.missed   { background: var(--missed-bg);   color: var(--missed-fg); }
+.badge.unknown  { background: var(--unknown-bg);  color: var(--unknown-fg); }
+.badge.na       { background: var(--na-bg);       color: var(--na-fg); }
+.badge.neutral  { background: #1d2436; color: var(--muted); }
+
+/* ---- rows ---- */
+
+.kv-row {
+  display: flex; justify-content: space-between; gap: 16px;
+  padding: 7px 0; border-bottom: 1px solid var(--border); font-size: 14px;
+}
+.kv-row:last-child { border-bottom: none; }
+.kv-row .k { color: var(--muted); }
+.stat-row {
+  display: flex; justify-content: space-between;
+  padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 15px;
+}
+.stat-row:last-child { border-bottom: none; }
+.stat-row .val { font-weight: 700; }
+
+.section-label {
+  color: var(--muted); font-size: 12px; text-transform: uppercase;
+  letter-spacing: 0.04em; margin: 20px 0 8px;
+}
+.section-label:first-of-type { margin-top: 0; }
+.note { color: var(--muted); font-size: 12px; font-style: italic; margin-top: 4px; }
+
+/* ---- metrics ---- */
+
+.metrics { display: flex; gap: 32px; flex-wrap: wrap; }
+.metric .label { color: var(--muted); font-size: 12px; }
+.metric .value { font-size: 20px; font-weight: 600; }
+
+/* ---- tabs ---- */
+
+.tabs { display: flex; gap: 8px; margin-bottom: 20px; flex-wrap: wrap; }
+.tab {
+  background: var(--panel); border: 1px solid var(--border); color: var(--muted);
+  padding: 8px 16px; border-radius: 6px; font-size: 13px; cursor: pointer;
+}
+.tab.active { color: var(--text); border-color: #4a5a80; background: #1d2436; }
+
+/* ---- buttons & inputs ---- */
+
+button {
+  font-family: inherit; font-size: 13px; cursor: pointer;
+  background: #1d2436; color: var(--text);
+  border: 1px solid var(--border); border-radius: 6px; padding: 8px 14px;
+}
+button:hover:not(:disabled) { border-color: #4a5a80; }
+button:disabled { opacity: 0.45; cursor: not-allowed; }
+button.link { background: none; border: none; color: var(--muted); padding: 0; }
+button.link:hover { color: var(--text); }
+
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+/* ---- status banner ---- */
+
+.banner {
+  border-radius: 6px; padding: 10px 14px; font-size: 13px; margin-bottom: 16px;
+  background: #3a2a16; color: var(--amber); border: 1px solid #6b4f1f;
+}
+.banner.error { background: #3a1616; color: #ffb3bd; border-color: #6b2430; }
+.banner.info  { background: #16273a; color: #9ccdff; border-color: #2c6698; }
+.banner:empty { display: none; }
+
+.dot-live {
+  display: inline-block; width: 8px; height: 8px; border-radius: 50%;
+  background: var(--muted); margin-right: 6px; vertical-align: middle;
+}
+.dot-live.on  { background: var(--green); }
+.dot-live.off { background: var(--red); }
+
+.empty { color: var(--muted); font-size: 13px; padding: 12px 0; }
+.mono { font-family: ui-monospace, "SF Mono", Consolas, monospace; font-size: 12px; }
+
+/* ---- timeline ---- */
+
+.timeline-row {
+  display: flex; gap: 12px; padding: 7px 0;
+  border-bottom: 1px solid var(--border); font-size: 14px;
+}
+.timeline-row:last-child { border-bottom: none; }
+.timeline-row .t { color: var(--muted); width: 62px; flex-shrink: 0; }
+
+/* ---- progress bar ---- */
+
+.bar { height: 10px; background: #1b2038; border-radius: 999px; overflow: hidden; margin: 8px 0; }
+.bar .fill { height: 100%; background: var(--green); }
