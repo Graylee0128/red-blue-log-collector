@@ -106,7 +106,7 @@
     },
     {
       "id": 7,
-      "title": "最新事件明細",
+      "title": "最新藍隊偵測事件（僅已確認偵測，不含紅隊原始動作／未偵測缺口）",
       "type": "table",
       "gridPos": { "h": 10, "w": 24, "x": 0, "y": 12 },
       "datasource": { "type": "grafana-postgresql-datasource", "uid": "purple-pg" },
@@ -114,7 +114,7 @@
         {
           "refId": "A",
           "format": "table",
-          "rawSql": "SELECT observed_at, team, event_type, source_ip, destination, action_result, actor, message, correlation_id FROM normalized_events WHERE $__timeFilter(observed_at) ORDER BY observed_at DESC LIMIT 100"
+          "rawSql": "SELECT observed_at, event_type, source_ip, destination, action_result, actor, message, correlation_id FROM normalized_events WHERE $__timeFilter(observed_at) AND team = 'blue' AND (event_type ILIKE '%alert%' OR event_type ILIKE '%detect%' OR event_type ILIKE '%firing%' OR message ILIKE '%alert%' OR message ILIKE '%detect%' OR message ILIKE '%firing%') ORDER BY observed_at DESC LIMIT 100"
         }
       ],
       "fieldConfig": { "defaults": {}, "overrides": [] }
