@@ -28,6 +28,23 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Metis deploy/logship.sh 的 rsyslog TCP 收信端（架構 §十一）。Metis 端
+  # LOG_SINK 指到這裡。host 514 是特權 port，容器內不用 root/CAP_NET_BIND_SERVICE
+  # 也能收——對外綁 514、對內轉 5140，port 映射由 Docker daemon 處理，跟
+  # collector 用 8001:8000 同一招。
+  syslog-receiver:
+    build: .
+    command: ["python", "-m", "rbcollector.syslog_receiver"]
+    environment:
+      DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
+      SYSLOG_PORT: "5140"
+    ports:
+      - "514:5140"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   # 紫隊 Grafana 介面：只接現有 collector Postgres（見 deploy/grafana/provisioning/
   # datasources/datasources.yaml），不含 cyber 那條 Loki/Prometheus log/metric pipeline。
   grafana:
@@ -48,6 +65,17 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    restart: unless-stopped
+
+  # 獨立的 Battleboard 風格戰況板頁面（跟 8001/ui/purple、/ui/battleboard 那套
+  # cyber 沿革的分頁式介面並存，用途不同：這個是給投影/大螢幕看戰況用的，
+  # 資料是打 collector 的 /analysis API，不是自己算的）。純靜態頁，沒有後端。
+  purple-console:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./ui/purple-console:/usr/share/nginx/html:ro
+    ports:
+      - "8090:80"
     restart: unless-stopped
 
 volumes:

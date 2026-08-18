@@ -56,6 +56,13 @@ all landed:
   Core scoring). See the header comment in each `app.js` for what changed
   and why.
 
+  **Removed since.** These three paths (and the `/ui` static mount in
+  `server.py` that served them) were deleted after this migration landed
+  -- kept side-by-side with `ui/purple-console/` (the standalone
+  battleboard page, served separately on `:8090`) long enough to compare,
+  then dropped in favor of that one. Mentioned here only so this lineage
+  note doesn't point at paths that no longer exist.
+
 Grafana/Loki/Prometheus themselves are not deployed here (deliberate --
 see detections.py above). `purple/response/agent.py` (automatic
 containment) was not migrated -- out of scope for this repo.

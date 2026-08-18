@@ -121,6 +121,36 @@ pattern (blue-team rows that read as a detection only; never a bare red
 action, which is exactly what a `visibility_gap` is). Aggregate-only panels
 (counts, distributions, timeseries) don't need this restriction.
 
+## Purple Console (battleboard)
+
+```bash
+docker compose up -d --build purple-console
+```
+
+Open `http://<host>:8090`. A standalone, self-contained battleboard page
+(no external JS/CSS deps beyond Google Fonts, no backend of its own) —
+served by its own nginx container, separate from the collector API. This
+is the only front-end in the repo now; the cyber-derived `/ui/purple/`
+and `/ui/battleboard/` (a tabbed analyst console served by the collector
+itself) were kept side-by-side for comparison and then removed — see
+`docs/COPY_FROM_CYBER.md` if that lineage matters later.
+
+The top stat row and the center correlation timeline are **real** —
+polled from `GET /analysis?caller=purple` every 8s (set the collector API
+URL and, if `INGEST_TOKEN` is configured, a bearer token in the controls
+bar; both persist in `localStorage`). Everything else on the board — the
+attacker/external/internal topology, the blue patch grid/score, the
+red/blue shell tails — has **no backing data model yet** and stays
+demo/mock, clearly labeled as such on each panel. Wiring those up for real
+needs: an IP-to-role mapping (attacker vs. DMZ vs. internal), a real
+scoring source, and a raw-log-tail endpoint respectively.
+
+`caller=purple` matters here specifically because `detection_gap` /
+`visibility_gap` rows are purple-clearance-only (see the disclosure note
+above) — with `caller=public` (or no token when `INGEST_TOKEN` is set) the
+timeline would only ever show hits, silently hiding every gap, which
+defeats the point of a gap-visibility board.
+
 ## Exposing to other VMs
 
 `docker-compose.yml`'s `"8001:8000"` port mapping already binds to all
@@ -188,6 +218,35 @@ of an IP, or the blue VM has multiple interfaces, matching will silently
 miss and everything shows up as `visibility_gap` even though detection
 happened. Check `/analysis` after a test action — if hits aren't showing up
 despite both events being on `/timeline`, this is the first thing to check.
+
+## Metis syslog receiver
+
+The forwarder scripts above are for sources that can run a script and speak
+HTTP. Metis's own log plane (`deploy/logship.sh`, 架構 §十一) doesn't --
+collection happens on the host, not in a container, and it ships over
+**rsyslog TCP**, not HTTP: `LOG_SINK=<this-collector-host>:514`.
+
+[`src/rbcollector/syslog_receiver.py`](src/rbcollector/syslog_receiver.py) is
+a small asyncio TCP server that speaks that protocol directly — it parses
+Metis's RFC5424 lines (`<PRI>1 TIMESTAMP HOSTNAME APP-NAME - - [metis@1
+src="<file>" role="<red|blue|host>"] MSG`), rebuilds the same ingest payload
+shape the manual forwarders above construct from raw log lines, and calls
+the adapters/store directly — no second network hop through the HTTP API,
+and no separate deployment: it's the same image, just a different command
+(the `syslog-receiver` service in `docker-compose.yml`).
+
+```bash
+docker compose up -d --build syslog-receiver
+```
+
+Host `:514` maps to the container's `:5140` — the container never needs
+root/`CAP_NET_BIND_SERVICE` to bind a privileged port, Docker's own port
+mapping handles that. Point Metis's `LOG_SINK` at `<this-host>:514`.
+
+`role="host"` lines (docker-events, audit) aren't red/blue team activity —
+there's no normalized_events row for those (yet); they're logged and
+skipped. `role="red"`/`role="blue"` map the same way the manual forwarders
+do, so the same correlation caveat above applies here too.
 
 ## Interface contract
 

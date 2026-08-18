@@ -1,0 +1,595 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Purple Console</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Noto+Sans+TC:wght@400;500;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  /* Nocturne tokens —— 跟 UI DEMO（Battleboard）同一組視覺系統。獨立頁面，沒有
+     外部 JS/CSS 依賴。頂部統計格跟關聯時間軸打 collector 的 /analysis API 拿
+     真資料；拓樸／藍隊修補格／紅藍 Shell 目前沒有對應的真實資料模型，維持
+     示意（見頁首說明跟各面板圖說）。 */
+  :root {
+    --color-bg: #0b0d14;
+    --color-surface: #232532;
+    --color-text: #e9e9ed;
+    --color-accent: #9184d9;
+    --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+    --color-neutral-300: #cfd3e5;
+    --color-neutral-400: #b2b6ca;
+    --color-neutral-500: #9397ab;
+    --color-neutral-600: #75798c;
+    --color-neutral-700: #595d6c;
+    --color-neutral-800: #3f424d;
+    --color-neutral-900: #292b31;
+    --color-accent-200: #e7e5fe;
+    --color-accent-300: #d2cefd;
+    --color-accent-700: #5d5294;
+    --color-accent-900: #2b2741;
+    --shadow-sm: 0 0 0 1px #3f424d;
+    --shadow-md: 0 0 0 1px #595d6c, 0 6px 18px rgba(0,0,0,0.55);
+  }
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--color-bg); color: var(--color-text); }
+  body {
+    font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
+    padding: 28px 28px 56px;
+    display: flex; flex-direction: column; gap: 18px;
+    min-height: 100vh;
+  }
+  a { color: var(--color-accent-300); text-decoration: none; }
+  a:hover { color: var(--color-accent-200); }
+
+  .page-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
+  .page-head h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
+  .page-head .sub { font-size: 13px; color: var(--color-neutral-500); }
+
+  .controls {
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+    padding: 10px 16px; border-radius: 10px; background: var(--color-surface);
+    box-shadow: var(--shadow-sm); font-size: 13px; color: var(--color-neutral-400);
+  }
+  .controls .group { display: flex; align-items: center; gap: 8px; }
+  .controls input, .controls select, .controls button {
+    font: inherit; font-size: 13px; color: var(--color-text); background: var(--color-neutral-900);
+    border: 1px solid var(--color-neutral-700); border-radius: 6px; padding: 5px 10px; cursor: pointer;
+  }
+  .controls input { cursor: text; min-width: 220px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .controls input:focus-visible, .controls select:focus-visible, .controls button:focus-visible {
+    outline: 2px solid var(--color-accent); outline-offset: 2px;
+  }
+  .controls .status { display: flex; align-items: center; gap: 8px; }
+  .controls .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-neutral-700); }
+  .controls .status .dot.ok { background: #37e08a; }
+  .controls .status .dot.err { background: #ff4d5e; }
+
+  .stage-wrap { overflow: auto; border-radius: 16px; }
+  .stage {
+    width: 1920px; height: 1080px; flex-shrink: 0; box-sizing: border-box;
+    background: radial-gradient(90% 70% at 8% -10%, #1e2133 0%, #161826 55%, #101220 100%);
+    box-shadow: var(--shadow-md); border-radius: 14px; padding: 28px 33.6px;
+    display: flex; flex-direction: column; gap: 22.4px;
+    transform-origin: top left;
+  }
+
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @keyframes attackFlash {
+    0%   { background: #4a1520; box-shadow: 0 0 0 rgba(255,77,94,0); transform: scale(1); }
+    45%  { background: #ff4d5e; box-shadow: 0 0 26px rgba(255,77,94,0.85); transform: scale(1.08); }
+    100% { background: #4a1520; box-shadow: 0 0 0 rgba(255,77,94,0); transform: scale(1); }
+  }
+  @keyframes patchPop {
+    0%   { background: #12314d; box-shadow: 0 0 0 rgba(77,166,255,0); transform: scale(0.94); }
+    40%  { background: #62b0ff; box-shadow: 0 0 26px rgba(77,166,255,0.85); transform: scale(1.1); }
+    100% { background: #2b6fb0; box-shadow: 0 0 10px rgba(77,166,255,0.35); transform: scale(1); }
+  }
+  @keyframes sweep { 0% { opacity: 0.25; } 50% { opacity: 1; } 100% { opacity: 0.25; } }
+  @keyframes beamTravel {
+    0%   { top: 0%;   opacity: 0; }
+    8%   { opacity: 1; }
+    46%  { top: 50%;  opacity: 1; }
+    50%  { top: 50%;  opacity: 1; }
+    92%  { top: 100%; opacity: 1; }
+    100% { top: 100%; opacity: 0; }
+  }
+  @keyframes topoHit {
+    0%, 86%  { background: var(--color-neutral-900); box-shadow: 0 0 0 rgba(255,77,94,0); transform: scale(1); }
+    92%      { background: #ff4d5e; box-shadow: 0 0 26px rgba(255,77,94,0.85); transform: scale(1.05); }
+    100%     { background: #4a1520; box-shadow: 0 0 10px rgba(255,77,94,0.35); transform: scale(1); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .stage * { animation: none !important; }
+  }
+
+  .top-bar { display: flex; align-items: center; gap: 33.6px; padding-bottom: 14px; border-bottom: 1px solid var(--color-divider); flex-shrink: 0; }
+  .brand { display: flex; align-items: center; gap: 16.8px; }
+  .brand .dot { width: 14px; height: 14px; border-radius: 50%; }
+  .stat-row { margin-left: auto; display: flex; align-items: stretch; gap: 14px; }
+  .stat-tile { display: flex; flex-direction: column; gap: 4px; padding: 11.2px 22.4px; border-radius: 8px; background: var(--color-surface); box-shadow: var(--shadow-sm); min-width: 150px; }
+  .stat-tile .label { font-size: 20px; color: var(--color-neutral-500); white-space: nowrap; }
+  .stat-tile .value { font-size: 34px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+
+  .empty-banner { display: flex; align-items: center; gap: 16.8px; padding: 11.2px 22.4px; border-radius: 8px; background: var(--color-accent-900); border: 1px solid var(--color-accent-700); font-size: 22px; color: var(--color-accent-200); flex-shrink: 0; }
+  .error-banner { display: flex; align-items: center; gap: 16.8px; padding: 11.2px 22.4px; border-radius: 8px; background: #3a1620; border: 1px solid #ff4d5e; font-size: 20px; color: #ff9aa4; flex-shrink: 0; }
+
+  .board-row { display: grid; grid-template-columns: 430px minmax(0, 1fr) 430px; gap: 22.4px; height: 470px; flex-shrink: 0; }
+  .panel { display: flex; flex-direction: column; gap: 16.8px; padding: 22.4px 28px; border-radius: 14px; background: var(--color-surface); min-height: 0; }
+  .panel-head { display: flex; align-items: baseline; gap: 14px; }
+  .panel-tag { font-size: 26px; font-weight: 600; letter-spacing: 0.1em; }
+  .panel-sub { font-size: 20px; color: var(--color-neutral-500); white-space: nowrap; }
+  .panel-stat { margin-left: auto; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 20px; color: var(--color-neutral-300); }
+  .panel-note { font-size: 13px; color: var(--color-neutral-600); }
+  .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 19px; color: var(--color-neutral-400); margin-top: auto; }
+  .legend .swatch { display: flex; align-items: center; gap: 8.4px; }
+  .legend .chip { width: 14px; height: 14px; border-radius: 4px; }
+
+  .topo { position: relative; flex: 1; display: flex; min-height: 0; }
+  .topo-track { position: relative; flex: 1; display: flex; flex-direction: column; justify-content: space-between; min-height: 0; padding: 4px 0; }
+  .topo-line { position: absolute; left: 50%; top: 0; bottom: 0; width: 2px; transform: translateX(-50%); background: linear-gradient(180deg, rgba(255,77,94,0.5), rgba(255,143,153,0.15) 50%, rgba(255,77,94,0.5)); }
+  .beam { position: absolute; left: 50%; width: 14px; height: 14px; margin-left: -7px; border-radius: 50%; background: #ff4d5e; box-shadow: 0 0 16px 4px rgba(255,77,94,0.8); }
+  .node { position: relative; display: flex; align-items: center; gap: 11.2px; padding: 11.2px 16.8px; border-radius: 8px; background: var(--color-neutral-900); border: 1px solid var(--color-neutral-700); }
+  .node .name { font-size: 20px; font-weight: 500; color: var(--color-text); }
+  .node .caption { font-size: 15px; color: var(--color-neutral-500); }
+  .node-attacker { border-color: #ff4d5e; }
+
+  .timeline-head { display: flex; align-items: center; gap: 16.8px; }
+  .timeline-title { font-size: 22px; letter-spacing: 0.14em; color: var(--color-neutral-500); }
+  .timeline-legend { margin-left: auto; display: flex; gap: 22.4px; font-size: 18px; color: var(--color-neutral-400); }
+  .timeline-legend span { display: flex; align-items: center; gap: 8.4px; }
+  .timeline-cols { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 8px 14px; align-items: center; font-size: 20px; color: var(--color-neutral-600); }
+  .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+  .t-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 14px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--color-divider); white-space: nowrap; }
+  .t-row .time { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 21px; color: var(--color-neutral-500); }
+  .t-row .who { display: flex; align-items: center; gap: 11.2px; overflow: hidden; }
+  .t-row .who .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+  .t-row .who .label { font-size: 21px; overflow: hidden; text-overflow: ellipsis; }
+  .t-row .bar { height: 3px; }
+  .t-row .dash { height: 0; border-top: 2px dashed var(--color-neutral-700); }
+  .t-row .miss { display: flex; align-items: center; gap: 11.2px; }
+  .t-row .miss .ring { width: 10px; height: 10px; border-radius: 50%; border: 2px solid var(--color-neutral-700); flex-shrink: 0; }
+  .t-row .miss .txt { font-size: 21px; color: var(--color-neutral-600); }
+  .t-row .latency { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 21px; text-align: right; color: var(--color-neutral-400); }
+
+  .score-row { display: flex; align-items: baseline; gap: 11.2px; }
+  .score-val { font-size: 76px; line-height: 0.85; font-weight: 500; letter-spacing: -0.03em; color: #8ec6ff; font-variant-numeric: tabular-nums; }
+  .score-max { font-size: 32px; color: var(--color-neutral-600); }
+  .score-track { height: 12px; border-radius: 999px; background: var(--color-neutral-900); overflow: hidden; }
+  .score-fill { height: 100%; background: linear-gradient(90deg, #2b6fb0, #62b0ff); transition: width 0.4s ease; }
+  .cell-grid { display: grid; gap: 10px; }
+  .cell { height: 44px; border-radius: 6px; }
+  .cell-idle { background: var(--color-neutral-900); border: 1px solid var(--color-neutral-800); }
+  .cell-done { background: #2b6fb0; border: 1px solid #62b0ff; }
+  .cell-active { background: #12314d; border: 1px solid #4da6ff; animation: patchPop 1.8s ease-in-out infinite; }
+
+  .shell-row { display: grid; grid-template-columns: 1fr 1fr; gap: 22.4px; flex: 1; min-height: 0; }
+  .shell { display: flex; flex-direction: column; min-height: 0; border-radius: 14px; background: #0d0f19; overflow: hidden; }
+  .shell-head { display: flex; align-items: center; gap: 14px; padding: 11.2px 22.4px; border-bottom: 1px solid; flex-shrink: 0; }
+  .shell-head .dot { width: 10px; height: 10px; border-radius: 50%; }
+  .shell-head .title { font-size: 21px; letter-spacing: 0.1em; }
+  .shell-head .path { margin-left: auto; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 17px; color: var(--color-neutral-600); }
+  .shell-body { flex: 1; min-height: 0; overflow: hidden; padding: 11.2px 22.4px; display: flex; flex-direction: column; gap: 4px; font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 20px; line-height: 1.3; }
+  .shell-body .line { display: flex; gap: 14px; white-space: nowrap; }
+  .shell-body .time { color: var(--color-neutral-700); }
+  .shell-body .text { color: #d7dbe8; overflow: hidden; text-overflow: ellipsis; }
+  .caret { width: 11px; height: 20px; animation: pulse 1.1s steps(1) infinite; }
+</style>
+</head>
+<body>
+
+<div class="page-head">
+  <h1>Purple Console</h1>
+  <span class="sub">投影用大螢幕戰況板 · 頂部統計格與中間關聯時間軸接 collector 的 /analysis 即時資料 · 左右拓樸／修補格與下方 Shell 目前無對應資料模型，維持示意</span>
+</div>
+
+<div class="controls">
+  <div class="group">
+    <label for="api-base">Collector API</label>
+    <input id="api-base" type="text" placeholder="http://10.167.223.61:8001" spellcheck="false">
+  </div>
+  <div class="group">
+    <label for="token">Bearer token（選填）</label>
+    <input id="token" type="password" placeholder="INGEST_TOKEN 有設才需要" spellcheck="false">
+  </div>
+  <button type="button" id="reconnect">重新連線</button>
+  <div class="status">
+    <span class="dot" id="status-dot"></span>
+    <span id="status-text">尚未連線</span>
+  </div>
+  <div class="group" style="margin-left: auto;">
+    <label for="difficulty">藍隊難度（示意）</label>
+    <select id="difficulty">
+      <option value="簡單">簡單（5 題）</option>
+      <option value="普通">普通（5 題）</option>
+      <option value="困難" selected>困難（7 題）</option>
+    </select>
+  </div>
+</div>
+
+<div class="stage-wrap">
+<div class="stage" id="stage">
+
+  <div class="top-bar">
+    <div class="brand">
+      <span class="dot" style="background:#ff4d5e; box-shadow:0 0 22px rgba(255,77,94,0.55);"></span>
+      <span style="font-size:38px; font-weight:600; letter-spacing:0.08em; color:#ff6b78;">RED</span>
+      <span style="font-size:22px; color:var(--color-neutral-600); letter-spacing:0.2em;">VS</span>
+      <span style="font-size:38px; font-weight:600; letter-spacing:0.08em; color:#62b0ff;">BLUE</span>
+      <span class="dot" style="background:#4da6ff; box-shadow:0 0 22px rgba(77,166,255,0.55);"></span>
+    </div>
+    <div class="stat-row">
+      <div class="stat-tile"><span class="label">動作</span><span class="value" id="stat-actions">—</span></div>
+      <div class="stat-tile"><span class="label">偵測</span><span class="value" id="stat-detected">—</span></div>
+      <div class="stat-tile"><span class="label">反應 TIME</span><span class="value" id="stat-mttd">—</span></div>
+      <div class="stat-tile"><span class="label">快速次數</span><span class="value" id="stat-fast" style="color:#6ee7a2;">—</span></div>
+      <div style="display:flex; align-items:center; gap:11.2px; font-size:20px; color:var(--color-neutral-400); white-space:nowrap;">
+        <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 14px var(--color-accent); animation:pulse 2.4s ease-in-out infinite;"></span>
+        <span>更新於 <span id="stat-updated">—</span></span>
+      </div>
+    </div>
+  </div>
+
+  <div class="error-banner" id="error-banner" hidden></div>
+  <div class="empty-banner" id="empty-banner" hidden>
+    <span aria-hidden="true">⚠</span>
+    <span>目前沒有紅隊事件（可能是還沒有進行中的演練，或這台 collector 還沒收到資料）。</span>
+  </div>
+
+  <div class="board-row">
+
+    <div class="panel" style="box-shadow:0 0 0 1px #3f2430;">
+      <div class="panel-head">
+        <span class="panel-tag" style="color:#ff8f99;">RED</span>
+        <span class="panel-sub">攻擊拓樸</span>
+        <span class="panel-note">示意，非真實資料</span>
+      </div>
+
+      <div class="topo" id="topo">
+        <div class="topo-track">
+          <div class="topo-line"></div>
+          <div class="beam" id="beam"></div>
+
+          <div class="node node-attacker">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#ff8f99" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+              <rect x="3" y="5" width="18" height="12" rx="1.5"/>
+              <path d="M2 19h20"/>
+              <path d="M8.5 9.5l2 2-2 2"/>
+              <path d="M13 13.5h2.5"/>
+            </svg>
+            <div style="display:flex; flex-direction:column; gap:1px;">
+              <span class="name">攻擊機</span>
+              <span class="caption">紅隊 · kali</span>
+            </div>
+          </div>
+
+          <div class="node">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="var(--color-neutral-400)" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+              <rect x="4" y="4.5" width="16" height="6" rx="1.2"/>
+              <rect x="4" y="13.5" width="16" height="6" rx="1.2"/>
+              <circle cx="7.5" cy="7.5" r="0.7" fill="var(--color-neutral-400)" stroke="none"/>
+              <circle cx="7.5" cy="16.5" r="0.7" fill="var(--color-neutral-400)" stroke="none"/>
+              <path d="M17.5 4.5V2.2"/>
+              <circle cx="17.5" cy="1.6" r="0.9" fill="var(--color-neutral-400)" stroke="none"/>
+            </svg>
+            <div style="display:flex; flex-direction:column; gap:1px;">
+              <span class="name">外網機</span>
+              <span class="caption">DMZ · 對外主機</span>
+            </div>
+          </div>
+
+          <div class="node" id="node-internal">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#e6e9f0" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;">
+              <rect x="4" y="8" width="16" height="11" rx="1.2"/>
+              <circle cx="7.5" cy="13.5" r="0.7" fill="#e6e9f0" stroke="none"/>
+              <path d="M15 8V2.5"/>
+              <path d="M15 2.5l4.5 2-4.5 2z" fill="#ff8f99" stroke="none"/>
+            </svg>
+            <div style="display:flex; flex-direction:column; gap:1px;">
+              <span class="name">內網機</span>
+              <span class="caption">Flag · 須橫向移動</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="legend">
+        <span class="swatch"><span class="chip" style="background:#ff4d5e;"></span>攻擊機發起</span>
+        <span class="swatch"><span class="chip" style="border:1px solid var(--color-neutral-700); background:var(--color-neutral-900);"></span>外網機轉送</span>
+        <span class="swatch"><span class="chip" style="background:#4a1520; box-shadow:0 0 8px rgba(255,77,94,0.6);"></span>內網機被命中</span>
+      </div>
+    </div>
+
+    <div class="panel" style="box-shadow:var(--shadow-sm);">
+      <div class="timeline-head">
+        <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 12px var(--color-accent);"></span>
+        <span class="timeline-title">攻防事件關聯時間軸　LIVE CORRELATION</span>
+        <div class="timeline-legend">
+          <span><span style="width:16px; height:3px; background:#37e08a;"></span>快速偵測 &lt;30s</span>
+          <span><span style="width:16px; height:3px; background:#4da6ff;"></span>&gt;30s</span>
+          <span><span style="width:16px; height:0; border-top:2px dashed var(--color-neutral-600);"></span>未被偵測</span>
+        </div>
+      </div>
+      <div class="timeline-cols">
+        <span>時間</span><span style="color:#ff8f99;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff;">藍隊事件</span><span style="text-align:right;">延遲</span>
+      </div>
+      <div class="timeline-rows" id="timeline-rows"></div>
+    </div>
+
+    <div class="panel" style="box-shadow:0 0 0 1px #1f3450;">
+      <div class="panel-head">
+        <span class="panel-tag" style="color:#8ec6ff;">BLUE</span>
+        <span class="panel-sub">修補進度</span>
+        <span class="panel-note">示意，非真實資料</span>
+      </div>
+      <div class="score-row">
+        <span class="score-val" id="blue-score"></span>
+        <span class="score-max">/ <span id="blue-score-max"></span></span>
+      </div>
+      <div class="score-track"><div class="score-fill" id="score-fill" style="width:0%;"></div></div>
+      <div class="cell-grid" id="blue-cells"></div>
+      <div class="legend">
+        <span class="swatch"><span class="chip" style="background:#2b6fb0;"></span>修補完成</span>
+        <span class="swatch"><span class="chip" style="background:#62b0ff; animation:sweep 1.8s ease-in-out infinite;"></span>修補中</span>
+        <span class="swatch"><span class="chip" style="background:var(--color-neutral-900); border:1px solid var(--color-neutral-800);"></span>未處理</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="shell-row">
+    <div class="shell" style="box-shadow:0 0 0 1px #3f2430;">
+      <div class="shell-head" style="background:#1d1220; border-color:#3f2430;">
+        <span class="dot" style="background:#ff4d5e; box-shadow:0 0 12px #ff4d5e;"></span>
+        <span class="title" style="color:#ff8f99;">紅隊終端機　RED SHELL</span>
+        <span class="path">示意，非真實資料</span>
+      </div>
+      <div class="shell-body" id="red-shell">
+        <div class="line"><span style="color:#ff6b78;">red@kali-01:~$</span><span class="caret" style="background:#ff6b78;"></span></div>
+      </div>
+    </div>
+    <div class="shell" style="box-shadow:0 0 0 1px #1f3450;">
+      <div class="shell-head" style="background:#101c2c; border-color:#1f3450;">
+        <span class="dot" style="background:#4da6ff; box-shadow:0 0 12px #4da6ff;"></span>
+        <span class="title" style="color:#8ec6ff;">藍隊監控日誌　BLUE SHELL</span>
+        <span class="path">示意，非真實資料</span>
+      </div>
+      <div class="shell-body" id="blue-shell">
+        <div class="line"><span style="color:#62b0ff;">blue@soc-01:~$</span><span class="caret" style="background:#62b0ff;"></span></div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</div>
+
+<script>
+(function () {
+  var POLL_MS = 8000;
+  var API_KEY = "purple-console.api-base";
+  var TOKEN_KEY = "purple-console.token";
+
+  var MOCK_RED_SHELL = [
+    { time: "—", text: "（無對應資料，見面板圖說）" }
+  ];
+  var MOCK_BLUE_SHELL = [
+    { time: "—", text: "（無對應資料，見面板圖說）" }
+  ];
+
+  var apiInput = document.getElementById("api-base");
+  var tokenInput = document.getElementById("token");
+  var difficultySel = document.getElementById("difficulty");
+  var statusDot = document.getElementById("status-dot");
+  var statusText = document.getElementById("status-text");
+  var errorBanner = document.getElementById("error-banner");
+  var emptyBanner = document.getElementById("empty-banner");
+
+  function el(tag, cls, html) {
+    var n = document.createElement(tag);
+    if (cls) n.className = cls;
+    if (html !== undefined) n.innerHTML = html;
+    return n;
+  }
+
+  function defaultApiBase() {
+    var host = window.location.hostname || "10.167.223.61";
+    return "http://" + host + ":8001";
+  }
+
+  apiInput.value = localStorage.getItem(API_KEY) || defaultApiBase();
+  tokenInput.value = localStorage.getItem(TOKEN_KEY) || "";
+
+  function fmtTime(iso) {
+    if (!iso) return "—";
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso).slice(11, 19) || "—";
+    return d.toLocaleTimeString("zh-TW", { hour12: false });
+  }
+
+  function fmtLatency(ms) {
+    if (ms === null || ms === undefined) return "—";
+    return "+" + (ms / 1000).toFixed(1) + "s";
+  }
+
+  function fmtMttd(ms) {
+    if (ms === null || ms === undefined) return "—";
+    return (ms / 1000).toFixed(1) + "s";
+  }
+
+  function labelFor(event) {
+    if (!event) return null;
+    return event.message || event.event_type || "(no message)";
+  }
+
+  // /analysis 的 correlations[] -> 畫面用的時間軸列，最新在最上面。
+  function buildChain(correlations) {
+    return correlations.slice().reverse().map(function (c) {
+      var hit = c.status === "hit";
+      var unflagged = c.status === "detection_gap"; // 有比對到，但沒被判定為告警
+      var missed = c.status === "visibility_gap";
+      var fast = hit && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
+      var slow = hit && !fast;
+      var blueLabel = labelFor(c.blue);
+      if (unflagged && blueLabel) blueLabel += "（未標記為偵測）";
+      return {
+        time: fmtTime(c.red ? c.red.observed_at : null),
+        redLabel: labelFor(c.red) || "(no message)",
+        blueLabel: blueLabel,
+        detected: hit || unflagged,
+        missed: missed,
+        fast: fast,
+        slow: slow || unflagged,
+        latency: fmtLatency(c.latency_ms)
+      };
+    });
+  }
+
+  function renderTimeline(chain) {
+    var host = document.getElementById("timeline-rows");
+    host.innerHTML = "";
+    chain.forEach(function (item) {
+      var row = el("div", "t-row");
+      row.appendChild(el("span", "time", item.time));
+      row.appendChild(el("span", "who", '<span class="dot" style="background:#ff4d5e; box-shadow:0 0 12px rgba(255,77,94,0.6);"></span><span class="label">' + item.redLabel + "</span>"));
+      if (item.fast) {
+        var fastBar = el("span", "bar");
+        fastBar.style.background = "linear-gradient(90deg, rgba(55,224,138,0.2), #37e08a)";
+        row.appendChild(fastBar);
+      } else if (item.slow) {
+        var slowBar = el("span", "bar");
+        slowBar.style.background = "linear-gradient(90deg, rgba(77,166,255,0.2), #4da6ff)";
+        row.appendChild(slowBar);
+      } else if (item.missed) {
+        row.appendChild(el("span", "dash"));
+      } else {
+        row.appendChild(el("span", ""));
+      }
+      if (item.detected && item.blueLabel) {
+        row.appendChild(el("span", "who", '<span class="dot" style="background:#4da6ff; box-shadow:0 0 12px rgba(77,166,255,0.6);"></span><span class="label">' + item.blueLabel + "</span>"));
+      } else if (item.missed) {
+        row.appendChild(el("span", "miss", '<span class="ring"></span><span class="txt">未被偵測</span>'));
+      } else {
+        row.appendChild(el("span", ""));
+      }
+      row.appendChild(el("span", "latency", item.latency));
+      host.appendChild(row);
+    });
+  }
+
+  // 拓樸光束／藍隊修補格／Shell tail：目前沒有對應的真實資料模型，維持示意，
+  // 只依「有沒有連上、有沒有資料」開關動畫，不隨真實事件內容變化。
+  function renderMockPanels(hasData) {
+    var beam = document.getElementById("beam");
+    var node = document.getElementById("node-internal");
+    document.getElementById("topo").style.opacity = hasData ? "1" : "0.4";
+    beam.style.animation = hasData ? "beamTravel 3.2s ease-in-out infinite" : "none";
+    beam.style.opacity = hasData ? "" : "0";
+    node.style.animation = hasData ? "topoHit 3.2s ease-in-out infinite" : "none";
+
+    var difficulty = difficultySel.value;
+    var blueTotal = difficulty === "困難" ? 7 : 5;
+    var blueDone = hasData ? Math.max(1, Math.round(blueTotal * 0.6)) : 0;
+    var blueActive = hasData ? 1 : 0;
+    var scoreMax = blueTotal * 20;
+    var blueScoreVal = hasData ? Math.round(scoreMax * 0.57) : 0;
+    var scorePct = hasData ? Math.round((blueScoreVal / scoreMax) * 100) : 0;
+
+    document.getElementById("blue-score").textContent = hasData ? String(blueScoreVal) : "—";
+    document.getElementById("blue-score-max").textContent = scoreMax;
+    document.getElementById("score-fill").style.width = scorePct + "%";
+
+    var cellsHost = document.getElementById("blue-cells");
+    cellsHost.innerHTML = "";
+    cellsHost.style.gridTemplateColumns = "repeat(" + blueTotal + ", minmax(0, 1fr))";
+    for (var i = 0; i < blueTotal; i++) {
+      var cls = "cell ";
+      if (!hasData) cls += "cell-idle";
+      else if (i < blueDone) cls += "cell-done";
+      else if (i < blueDone + blueActive) cls += "cell-active";
+      else cls += "cell-idle";
+      cellsHost.appendChild(el("div", cls.trim()));
+    }
+
+    var RED_PROMPT = "red@kali-01:~$";
+    var BLUE_PROMPT = "blue@soc-01:~$";
+    var redHost = document.getElementById("red-shell");
+    redHost.innerHTML = "";
+    MOCK_RED_SHELL.forEach(function (l) {
+      redHost.appendChild(el("div", "line", '<span class="time">' + l.time + '</span><span style="color:#ff6b78;">' + RED_PROMPT + '</span><span class="text">' + l.text + "</span>"));
+    });
+    redHost.appendChild(el("div", "line", '<span style="color:#ff6b78;">' + RED_PROMPT + '</span><span class="caret" style="background:#ff6b78;"></span>'));
+
+    var blueHost = document.getElementById("blue-shell");
+    blueHost.innerHTML = "";
+    MOCK_BLUE_SHELL.forEach(function (l) {
+      blueHost.appendChild(el("div", "line", '<span class="time">' + l.time + '</span><span style="color:#62b0ff;">' + BLUE_PROMPT + '</span><span class="text">' + l.text + "</span>"));
+    });
+    blueHost.appendChild(el("div", "line", '<span style="color:#62b0ff;">' + BLUE_PROMPT + '</span><span class="caret" style="background:#62b0ff;"></span>'));
+  }
+
+  function setStatus(state, text) {
+    statusDot.className = "dot" + (state ? " " + state : "");
+    statusText.textContent = text;
+  }
+
+  async function refresh() {
+    var apiBase = apiInput.value.trim().replace(/\/$/, "");
+    var token = tokenInput.value.trim();
+    localStorage.setItem(API_KEY, apiBase);
+    localStorage.setItem(TOKEN_KEY, token);
+
+    var headers = {};
+    if (token) headers["Authorization"] = "Bearer " + token;
+
+    try {
+      var res = await fetch(apiBase + "/analysis?caller=purple&limit=5000", { headers: headers });
+      if (!res.ok) throw new Error("HTTP " + res.status + (res.status === 401 ? "（purple clearance 需要正確的 bearer token）" : ""));
+      var data = await res.json();
+
+      errorBanner.hidden = true;
+      setStatus("ok", "已連線 · " + apiBase);
+
+      var correlations = data.correlations || [];
+      var hasData = (data.red_actions || 0) > 0;
+      emptyBanner.hidden = hasData;
+
+      document.getElementById("stat-actions").textContent = data.red_actions ?? "—";
+      document.getElementById("stat-detected").textContent = hasData ? (data.detected + " / " + data.red_actions) : "—";
+      document.getElementById("stat-mttd").textContent = fmtMttd(data.mttd_p50_ms);
+      document.getElementById("stat-fast").textContent = correlations.filter(function (c) {
+        return c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
+      }).length;
+      document.getElementById("stat-updated").textContent = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+
+      renderTimeline(buildChain(correlations));
+      renderMockPanels(hasData);
+    } catch (err) {
+      setStatus("err", "連線失敗");
+      errorBanner.hidden = false;
+      errorBanner.textContent = "抓不到 " + apiBase + "/analysis：" + err.message + "（確認 API 位址、CORS、bearer token）";
+    }
+  }
+
+  document.getElementById("reconnect").addEventListener("click", refresh);
+  difficultySel.addEventListener("change", function () {
+    // emptyBanner.hidden === true 就是最近一次 refresh() 判斷「有資料」的狀態。
+    renderMockPanels(emptyBanner.hidden);
+  });
+
+  // 依視窗寬度自動縮放 1920×1080 的看板，桌面/筆電開啟時不用橫向捲動就能看到全貌。
+  function fitStage() {
+    var wrap = document.querySelector(".stage-wrap");
+    var stage = document.getElementById("stage");
+    var available = wrap.clientWidth - 4;
+    var scale = Math.min(1, available / 1920);
+    stage.style.transform = "scale(" + scale + ")";
+    wrap.style.height = (1080 * scale) + "px";
+  }
+  window.addEventListener("resize", fitStage);
+  fitStage();
+
+  refresh();
+  setInterval(refresh, POLL_MS);
+})();
+</script>
+</body>
+</html>
