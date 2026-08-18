@@ -288,8 +288,11 @@ git push origin :refs/tags/v0.2.0
 ### Consuming the image
 
 - **Development:** Use `:latest` (always tracks main branch)
-- **Production:** Use a pinned version tag (e.g. `:v0.2.0`) — see
-  [`docker-compose.yml`](docker-compose.yml) for the current example
+- **Production:** Use a pinned version tag (e.g. `:v0.2.0`). This repo's own
+  [`docker-compose.yml`](docker-compose.yml) still builds the collector
+  locally (`build: .`) rather than pulling a published tag — swap in an
+  `image:` line like the one below if you're deploying the published image
+  instead of building from source.
 
 ```yaml
 services:
