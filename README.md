@@ -102,6 +102,26 @@ This is **not** a drop-in for cyber's Blue SOC dashboard: that one queries
 Loki/Prometheus, which this standalone stack does not run. Dashboards here
 need to be built fresh against the Postgres schema.
 
+## Purple Console
+
+```bash
+docker compose up -d --build purple-console
+```
+
+Open `http://<host>:8090`. This is a standalone battleboard-style page (no
+external JS/CSS deps, no Grafana iframe) — stat tiles, a red/blue
+correlation timeline, and a red/blue shell tail, in the same visual system
+as the Battleboard UI demo.
+
+**Currently demo data, not wired to the live API yet.** The page renders
+from a static mock dataset; swapping in real data means fetching
+`/analysis` (and a not-yet-built raw-log endpoint for the shell tail)
+instead, which also needs CORS enabled on the collector API since the two
+pages are on different ports/origins. The attack-topology panel
+(attacker/external/internal machine) and the blue patch-grid/score have no
+backing data model at all yet — those stay mocked until there's a real IP
+role mapping and a real scoring source to drive them.
+
 ## Interface contract
 
 See [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md) for the full
