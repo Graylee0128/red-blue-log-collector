@@ -1,9 +1,10 @@
 /* 前端共用小工具 + 一層薄薄的 fetch 包裝。
  *
  * 搬自 cyber 的 ui/assets/api.js（issue #3），拿掉了 `/gw/<identity>`
- * 服務身分閘道——rbcollector 沒有身分驗證這層。請求直接打這個 repo 自己的
- * 端點（見 docs/INTERFACE_CONTRACT.md）；/events/{id}/context 的 `caller`
- * 在這裡只是一個普通的 query 參數，不是後端注入的身分。
+ * 服務身分閘道，換成單一共用 bearer token（跟 /ingest/* 同一把）。請求直接
+ * 打這個 repo 自己的端點（見 docs/INTERFACE_CONTRACT.md）；`caller` 仍是
+ * 一個普通的 query 參數，但 `caller=purple` 現在會帶上 token，後端才擋得住
+ * 「網址上把 caller 改成 purple 就能繞過分級」這種事。
  */
 
 export class ApiError extends Error {
@@ -26,10 +27,27 @@ export function humanize(error) {
   }
 }
 
-async function request(path) {
+/* `caller=purple` 現在後端要驗 bearer token（跟 /ingest/* 同一把共用密鑰，
+ * 見 docs/INTERFACE_CONTRACT.md #authentication）——不然任何人把網址上的
+ * caller 改成 purple 就能繞過整套 disclosure 分級。這個 console 本來就沒
+ * 有登入頁，這裡用「第一次要 purple 資料時跳 prompt 問一次、存
+ * sessionStorage」這個最小手法頂著，密碼錯了（401）就清掉重問一次。 */
+const TOKEN_KEY = "rbcollector_purple_token";
+
+function getPurpleToken() {
+  let token = sessionStorage.getItem(TOKEN_KEY);
+  if (!token) {
+    token = window.prompt("Purple clearance token (shared ingest token):") ?? "";
+    sessionStorage.setItem(TOKEN_KEY, token);
+  }
+  return token;
+}
+
+async function request(path, { purple = false } = {}) {
   let response;
   try {
-    response = await fetch(path);
+    const headers = purple ? { Authorization: `Bearer ${getPurpleToken()}` } : undefined;
+    response = await fetch(path, headers ? { headers } : undefined);
   } catch (cause) {
     console.error("network failure", path, cause);
     throw new ApiError(0, "network failure", { path });
@@ -46,6 +64,7 @@ async function request(path) {
   }
 
   if (!response.ok) {
+    if (purple && response.status === 401) sessionStorage.removeItem(TOKEN_KEY);
     const detail = typeof payload?.detail === "string" ? payload.detail : JSON.stringify(payload ?? "");
     console.error("api error", response.status, path, detail);
     throw new ApiError(response.status, detail, { path });
@@ -56,10 +75,13 @@ async function request(path) {
 /** 這個 UI 會打的所有端點。每個頁面一個實例就夠。 */
 export class Api {
   timeline(limit = 500) { return request(`/timeline?limit=${limit}`); }
-  analysis(limit = 5000) { return request(`/analysis?limit=${limit}`); }
+  /** `caller`：`"public"`（預設，安全視角）或 `"purple"`（需要 token，見上）。 */
+  analysis(limit = 5000, caller = "public") {
+    return request(`/analysis?limit=${limit}&caller=${caller}`, { purple: caller === "purple" });
+  }
   /** `caller`：`"public"` 或 `"purple"`——見 docs/INTERFACE_CONTRACT.md。 */
   context(eventId, caller, windowMinutes = 5) {
-    return request(`/events/${encodeURIComponent(eventId)}/context?caller=${caller}&window_minutes=${windowMinutes}`);
+    return request(`/events/${encodeURIComponent(eventId)}/context?caller=${caller}&window_minutes=${windowMinutes}`, { purple: caller === "purple" });
   }
 }
 

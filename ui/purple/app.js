@@ -38,7 +38,10 @@ function worstStatus(rows) {
 
 async function refresh() {
   try {
-    state.analysis = await api.analysis();
+    // Purple Console 就是要看 gap，不能用預設的 public 視角（見 api.js 的
+    // caller/token 說明）——否則 coverage 表跟 report 會只剩 hit，等於整個
+    // console 的存在理由都沒了。
+    state.analysis = await api.analysis(5000, "purple");
     showBanner(banner, "");
     groupByTechnique();
     render();
