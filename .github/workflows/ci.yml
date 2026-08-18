@@ -51,6 +51,9 @@ jobs:
           push: true
           # latest 給 Metis 的 yaml 追蹤最新版；sha 那個 tag 讓每一次發布都可回溯，
           # 出事時能釘住某一版重現，不用只能猜「latest 是哪次 commit 的」。
+          # 寫死小寫，不用 github.repository_owner —— GHCR／Docker image 名稱不
+          # 允許大寫，這個 repo owner 剛好是 Graylee0128（大寫 G），直接內插會讓
+          # build-push-action 在推送那一步失敗（已經真的撞過一次：run #9）。
           tags: |
-            ghcr.io/${{ github.repository_owner }}/red-blue-log-collector:latest
-            ghcr.io/${{ github.repository_owner }}/red-blue-log-collector:${{ github.sha }}
+            ghcr.io/graylee0128/red-blue-log-collector:latest
+            ghcr.io/graylee0128/red-blue-log-collector:${{ github.sha }}
