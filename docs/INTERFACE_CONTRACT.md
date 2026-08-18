@@ -16,6 +16,14 @@ change when a real provider schema shows up.
 | GET | `/timeline?limit=` | Merged, time-ordered Red+Blue normalized events |
 | GET | `/analysis?limit=` | Correlated Red→Blue detections + latency/gap summary |
 
+## Authentication
+
+`POST /ingest/red` and `POST /ingest/blue` require an `Authorization: Bearer
+<token>` header whenever the collector's `INGEST_TOKEN` environment variable
+is set. A missing or wrong token returns `401`. If `INGEST_TOKEN` is unset
+(the local/dev default), no auth is enforced. See
+[Exposing to other VMs](../README.md#exposing-to-other-vms) in the README.
+
 `/ingest/*` accepts **any JSON object** — there is no fixed producer schema.
 The adapter looks for a set of known field names (aliases below) and falls
 back to sensible defaults for anything it can't find. The full original

@@ -50,6 +50,7 @@ full pipeline actually produces a correlated `hit` on `/timeline` and
 ```bash
 curl -X POST http://localhost:8000/ingest/red \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
   -d '{
     "timestamp":"2026-08-17T11:00:00+08:00",
     "src_ip":"10.0.0.10",
@@ -64,6 +65,7 @@ curl -X POST http://localhost:8000/ingest/red \
 ```bash
 curl -X POST http://localhost:8000/ingest/blue \
   -H 'Content-Type: application/json' \
+  -H "Authorization: Bearer $INGEST_TOKEN" \
   -d '{
     "time":"2026-08-17T11:00:05+08:00",
     "attacker_ip":"10.0.0.10",
@@ -72,6 +74,10 @@ curl -X POST http://localhost:8000/ingest/blue \
     "severity":"high"
   }'
 ```
+
+The `Authorization` header is only enforced when the collector's `INGEST_TOKEN`
+environment variable is set (see [Exposing to other VMs](#exposing-to-other-vms)).
+It's unset by default, so local/dev requests without a token still work.
 
 ## Query merged timeline
 
@@ -85,6 +91,74 @@ Or one side only:
 curl 'http://localhost:8000/events?team=red'
 curl 'http://localhost:8000/events?team=blue'
 ```
+
+## Exposing to other VMs
+
+`docker-compose.yml`'s `"8000:8000"` port mapping already binds to all
+interfaces on the collector host, not just `localhost` — a source VM on the
+same network can already reach it once the host firewall/security group
+allows the port. What's missing before doing that for real (see
+[issue #1](../../issues/1)):
+
+1. **Set a shared bearer token.** Export `INGEST_TOKEN` before `docker compose
+   up` (it's passed through by `docker-compose.yml`). While unset, `/ingest/*`
+   accepts unauthenticated requests (local/dev only) — anyone who can reach
+   the port can write fake events. Once set, every `POST /ingest/*` call must
+   send `Authorization: Bearer <token>`; requests without it get `401`.
+2. **Open the port** for the source VM(s) specifically, not `0.0.0.0/0`.
+3. **Ship logs from the VM.** [`scripts/forwarder-template.sh`](scripts/forwarder-template.sh)
+   is a minimal starting point (tail a log file, POST each line with the
+   bearer token) per issue #1's Option A. It sends `{"message": line, ...}` —
+   replace that payload construction with real field mapping once the actual
+   Red/Blue log format is known, using the aliases in
+   [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md).
+
+**Not adopted (for now):** [issue #2](../../issues/2) proposed replacing this
+HTTP-push model with cyber's Alloy/Loki tail-and-ship pipeline. That's a more
+proven mechanism, but it also raises the open question of whether this
+collector's Postgres/`/analysis` half should keep existing at all — see the
+issue for the full tradeoff. Decision: keep this collector's ingestion path
+as-is (bearer-token HTTP push, per Option A) since it's the smaller change and
+this repo's correlation/MTTD logic doesn't have an obvious Loki equivalent.
+Revisit if/when raw-log volume or multi-consumer needs (e.g. Grafana wanting
+the same logs) make a shared Loki backend worth the added infra.
+
+## Real log source forwarders
+
+Two concrete forwarders, built on the `forwarder-template.sh` pattern, for
+the actual log sources currently in use:
+
+- [`scripts/forward-red-bash-history.sh`](scripts/forward-red-bash-history.sh)
+  — red-team command log → `/ingest/red`. Plain `~/.bash_history` isn't
+  reliable to tail live (it's only flushed periodically); the script's
+  header comment includes a `PROMPT_COMMAND` snippet to log each command
+  with a timestamp as it runs.
+- [`scripts/forward-blue-authlog.sh`](scripts/forward-blue-authlog.sh) —
+  `/var/log/auth.log` (Debian/Ubuntu; use `/var/log/secure` on RHEL) →
+  `/ingest/blue`. Lines matching common failed-auth keywords are tagged
+  `event_type=blue.alert` so they're recognized as detections.
+
+Run each on its respective VM:
+
+```bash
+COLLECTOR_URL=http://<collector-ip>:8000 INGEST_TOKEN=<token> \
+  ./scripts/forward-red-bash-history.sh ~/red-command.log
+
+COLLECTOR_URL=http://<collector-ip>:8000 INGEST_TOKEN=<token> \
+  ./scripts/forward-blue-authlog.sh /var/log/auth.log
+```
+
+**Correlation caveat:** neither source has a shared `correlation_id`, so
+matching falls back to the IP/destination heuristic in
+[`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md#correlation-logic).
+That only works if the red-team command's target IP (extracted from the
+command text) and the blue VM's own IP (used as `destination`) are the same
+*string* — e.g. the red operator ran `ssh 10.0.0.20` and the blue VM's
+`hostname -I` also resolves to `10.0.0.20`. If red types a hostname instead
+of an IP, or the blue VM has multiple interfaces, matching will silently
+miss and everything shows up as `visibility_gap` even though detection
+happened. Check `/analysis` after a test action — if hits aren't showing up
+despite both events being on `/timeline`, this is the first thing to check.
 
 ## Interface contract
 
