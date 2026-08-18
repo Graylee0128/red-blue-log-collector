@@ -170,7 +170,11 @@
   .timeline-legend span { display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
   .timeline-cols { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 8px 14px; align-items: center; font-size: 20px; color: var(--color-neutral-600); }
   .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
-  .t-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 14px; align-items: center; padding: 4px 0; border-bottom: 1px solid var(--color-divider); white-space: nowrap; }
+  .t-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 14px; align-items: center; padding: 4px 8px; border-radius: 6px; border-bottom: 1px solid var(--color-divider); white-space: nowrap; }
+  /* 危險度高的攻擊——box-shadow 疊一圈亮框＋外散光，不用 border 是為了
+     不影響格線寬度計算（跟其他列的 padding/寬度保持一致）。severity 是
+     detections.py 每條規則自己定義的真實資料，不是編的。 */
+  .t-row .who.severity-high { padding: 3px 10px; margin: -3px 0; border-radius: 8px; box-shadow: 0 0 0 1px #fff6d1, 0 0 10px rgba(255,246,209,0.55); }
   .t-row .time { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 15px; color: var(--color-neutral-500); }
   .t-row .who { display: flex; align-items: center; gap: 11.2px; overflow: hidden; }
   .t-row .who .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
@@ -275,7 +279,7 @@
         </div>
       </div>
       <div class="timeline-cols">
-        <span>時間</span><span style="color:#ff8f99;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff;">藍隊事件</span><span style="text-align:right;">延遲</span>
+        <span>時間</span><span style="color:#ff8f99; text-align:center;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff; text-align:center;">藍隊事件</span><span style="text-align:right;">延遲</span>
       </div>
       <div class="timeline-rows" id="timeline-rows"></div>
     </div>
@@ -432,6 +436,7 @@
         missed: missed,
         fast: fast,
         slow: slow,
+        severityHigh: c.severity === "high",
         latency: fmtLatency(c.latency_ms)
       };
     });
@@ -449,7 +454,7 @@
     chain.forEach(function (item) {
       var row = el("div", "t-row");
       row.appendChild(el("span", "time", item.time));
-      row.appendChild(el("span", "who", '<span class="dot" style="background:#ff4d5e; box-shadow:0 0 12px rgba(255,77,94,0.6);"></span><span class="label">' + item.redLabel + "</span>"));
+      row.appendChild(el("span", "who" + (item.severityHigh ? " severity-high" : ""), '<span class="dot" style="background:#ff4d5e; box-shadow:0 0 12px rgba(255,77,94,0.6);"></span><span class="label">' + item.redLabel + "</span>"));
       if (item.fast) {
         row.appendChild(bar("#37e08a"));
       } else if (item.slow) {
@@ -556,18 +561,77 @@
     });
   }
 
-  // Shell：目前沒有對應的真實資料模型，一律畫成無資料的靜止狀態（只留
-  // 提示字元＋游標），不編造終端機輸出來假裝有即時活動。
-  function renderIdleShells() {
-    var RED_PROMPT = "red@kali-01:~$";
-    var BLUE_PROMPT = "blue@soc-01:~$";
-    var redHost = document.getElementById("red-shell");
-    redHost.innerHTML = "";
-    redHost.appendChild(el("div", "line", '<span style="color:#ff6b78;">' + RED_PROMPT + '</span><span class="caret" style="background:#ff6b78;"></span>'));
+  var RED_PROMPT = "red@kali-01:~$";
+  var BLUE_PROMPT = "blue@soc-01:~$";
+  var RED_SHELL_LINES = 6;
 
+  // 用 textContent 組行，不是塞 innerHTML 字串——指令內容是紅隊在終端機
+  // 打的原始文字，未經任何清洗，直接串進 HTML 字串會有 XSS 風險（這頁是
+  // 投影給全場看的公開頁面，沒有登入態可偷，但畫面被亂改一樣是問題）。
+  function shellLine(promptColor, promptText, timeText, bodyText, bodyEl) {
+    var line = el("div", "line");
+    if (timeText) {
+      var t = document.createElement("span");
+      t.className = "time";
+      t.textContent = timeText;
+      line.appendChild(t);
+    }
+    var p = document.createElement("span");
+    p.style.color = promptColor;
+    p.textContent = promptText;
+    line.appendChild(p);
+    if (bodyEl) {
+      line.appendChild(bodyEl);
+    } else {
+      var body = document.createElement("span");
+      body.className = "text";
+      body.textContent = bodyText;
+      line.appendChild(body);
+    }
+    return line;
+  }
+
+  function caretEl(color) {
+    var c = document.createElement("span");
+    c.className = "caret";
+    c.style.background = color;
+    return c;
+  }
+
+  // 藍隊 Shell：cmdlog 目前刻意不轉送藍隊那份（見 logship.sh／交接筆記），
+  // 沒有真實資料模型，維持無資料的靜止狀態。
+  function renderIdleBlueShell() {
     var blueHost = document.getElementById("blue-shell");
     blueHost.innerHTML = "";
-    blueHost.appendChild(el("div", "line", '<span style="color:#62b0ff;">' + BLUE_PROMPT + '</span><span class="caret" style="background:#62b0ff;"></span>'));
+    blueHost.appendChild(shellLine("#62b0ff", BLUE_PROMPT, null, null, caretEl("#62b0ff")));
+  }
+
+  // 紅隊 Shell：真資料——logship.sh 的 role=red 本來就會轉送每一席的
+  // cmdlog（見 syslog_receiver.py 的 red_payload_from_syslog），/events
+  // 直接查得到，不用等任何人先開新的資料源。抓不到就退回無資料狀態，
+  // 不編造內容。
+  async function refreshRedShell(apiBase) {
+    try {
+      // store.list_events() 是 ORDER BY observed_at ASC LIMIT N——LIMIT 小
+      // 的話拿到的是最舊的 N 筆，不是最新的。要拿到「最近幾筆」得整批抓
+      // 回來、自己在前端切尾巴（跟 /analysis?limit=5000 同一種做法）。
+      var res = await fetch(apiBase + "/events?team=red&limit=5000");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var events = await res.json();
+      var recent = events.slice(-RED_SHELL_LINES);
+      var host = document.getElementById("red-shell");
+      host.innerHTML = "";
+      recent.forEach(function (e) {
+        host.appendChild(shellLine("#ff6b78", RED_PROMPT, fmtTime(e.observed_at), e.message || e.event_type || ""));
+      });
+      host.appendChild(shellLine("#ff6b78", RED_PROMPT, null, null, caretEl("#ff6b78")));
+    } catch (err) {
+      // 靜默失敗——連線狀態已經由主要的 /analysis 輪詢跟狀態列處理，這裡
+      // 失敗不該讓整頁看起來掛掉，退回單純游標。
+      var host = document.getElementById("red-shell");
+      host.innerHTML = "";
+      host.appendChild(shellLine("#ff6b78", RED_PROMPT, null, null, caretEl("#ff6b78")));
+    }
   }
 
   // 左右兩塊面板（紅／藍隊進度）沒有真實資料模型，能不能顯示只看
@@ -632,6 +696,7 @@
 
       renderTimeline(buildChain(correlations));
       renderBreachPanel(correlations);
+      refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
     } catch (err) {
       setStatus("err", "連線失敗");
       errorBanner.hidden = false;
@@ -657,7 +722,8 @@
   renderBreachPanel([]);
   renderBlueProgress();
   renderAuditCoverage();
-  renderIdleShells();
+  renderIdleBlueShell();
+  document.getElementById("red-shell").appendChild(shellLine("#ff6b78", RED_PROMPT, null, null, caretEl("#ff6b78")));
   refresh();
   setInterval(refresh, POLL_MS);
 })();
