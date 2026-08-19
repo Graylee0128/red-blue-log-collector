@@ -174,8 +174,12 @@
      py（/possible-breaches）——中間的 .attack-beam 光束跟兩邊的
      .suspected 亮燈都是同一組疑似突破信號驅動，沒有疑似突破時維持未
      亮燈的骨架、光束不出現，不編造。 */
-  .breach-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px; position: relative; }
+  .breach-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
   .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: center; }
+  /* 紅隊來源格靠左放（不置中），跟右邊靶機格拉開視覺距離；.attack-beam
+     是這兩欄中間真正的 flex 元件（不是絕對定位），紅隊靠左騰出的空間會
+     自然被光束跟藍隊那欄吃掉，不用手動算光束該擺在哪個像素。 */
+  .clash-col-origin { justify-content: flex-start; }
   /* 跟右邊 .patch-grid 同一種排法：CSS Grid + grid-auto-flow:column，
      一欄最多 --breach-cols 個（一樣上限 8），直的往下疊，超過才往右開
      新欄。格子尺寸是動態的（見 --breach-cell-size），靠固定像素高度換
@@ -188,10 +192,13 @@
      「有人在」的狀態燈）。 */
   .breach-cell.active { background: linear-gradient(135deg, #7a1f2a, #ff4d5e); border-color: #ff4d5e; }
   /* 紅→藍中間的光束——只在有疑似突破時出現，一顆發光小球在兩欄之間來回
-     跑，呼應「紅隊打過去」這個方向性。絕對定位、蓋在 .breach-view 中間，
-     不佔版面（不會把兩欄擠窄）。 */
-  .attack-beam { position: absolute; left: 50%; top: 50%; width: 70px; height: 0; transform: translate(-50%, -50%); pointer-events: none; }
-  .attack-beam .pulse-dot { position: absolute; top: -4px; left: -10px; width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 12px 4px rgba(255,59,59,0.75); animation: beam-travel 1.3s ease-in-out infinite; }
+     跑，呼應「紅隊打過去」這個方向性。是兩個 .clash-col 中間真正的 flex
+     子元素（不是絕對定位蓋在算好的中點），紅隊靠左之後光束的位置會跟著
+     flex 排版自然調整，不用手動改座標；用 opacity 切換顯示/隱藏，而不是
+     從版面移除，這樣光束出現/消失不會讓兩邊格子的位置跳動。 */
+  .attack-beam { position: relative; width: 70px; height: 20px; flex-shrink: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s ease; }
+  .attack-beam.visible { opacity: 1; }
+  .attack-beam .pulse-dot { position: absolute; top: 50%; left: -10px; margin-top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 12px 4px rgba(255,59,59,0.75); animation: beam-travel 1.3s ease-in-out infinite; }
   /* 拖尾——子元素會跟著 .pulse-dot 的 left 動畫一起移動，不用另外算位置。
      往移動方向的反方向（左邊）延伸、由圓點的顏色淡出到透明，做出流線感。 */
   .attack-beam .pulse-dot::before { content: ""; position: absolute; top: 50%; right: 100%; transform: translateY(-50%); width: 28px; height: 3px; background: linear-gradient(90deg, transparent, #ff3b3b); border-radius: 3px; opacity: 0.7; }
@@ -298,8 +305,8 @@
       </div>
       <div class="panel-empty" id="red-empty">目前無對局中</div>
       <div class="breach-view" id="red-breach" hidden>
-        <div class="clash-col"><div class="breach-grid" id="origin-grid"></div></div>
-        <div class="attack-beam" id="attack-beam" hidden><div class="pulse-dot"></div></div>
+        <div class="clash-col clash-col-origin"><div class="breach-grid" id="origin-grid"></div></div>
+        <div class="attack-beam" id="attack-beam"><div class="pulse-dot"></div></div>
         <div class="clash-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
       <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破</div>
@@ -534,7 +541,7 @@
   var CELL_SIZE_MIN = 26;
   var CELL_SIZE_MAX_AT_COUNT = 3;  // <= 這個數量用最大格子
   var CELL_SIZE_MIN_AT_COUNT = 16; // >= 這個數量用最小格子
-  var PATCH_COLS_MAX = 8; // 一欄最多幾個（直排），超過往右開新欄
+  var PATCH_COLS_MAX = 5; // 一欄最多幾個（直排），超過往右開新欄
 
   function cellSizeForCount(count) {
     if (count <= CELL_SIZE_MAX_AT_COUNT) return CELL_SIZE_MAX;
@@ -573,10 +580,11 @@
     var suspectedExternal = showSuspected ? Math.min(externalCount, count) : 0;
     var suspectedInternal = showSuspected ? Math.min(internalCount, count) : 0;
     document.getElementById("breach-legend").hidden = !showSuspected;
-    // 光束：呼應「紅隊打過去」的方向性，只在有疑似突破時出現，不佔版面
-    // （absolute 定位，見上面 CSS），持續跑動而不是只播一次——跟格子的
-    // 亮燈狀態一樣是「目前有沒有疑似突破」，不是逐筆事件的一次性特效。
-    document.getElementById("attack-beam").hidden = !showSuspected;
+    // 光束：呼應「紅隊打過去」的方向性，只在有疑似突破時出現。用 class
+    // 切 opacity（見上面 CSS），不是從版面移除——光束的容器本來就是兩欄
+    // 中間的 flex 元件，移除會讓兩欄在光束消失/出現時位置跳動。持續
+    // 跑動而不是只播一次，跟格子的亮燈狀態一樣是「目前有沒有疑似突破」。
+    document.getElementById("attack-beam").classList.toggle("visible", showSuspected);
 
     // 紅隊來源格：對局中（hasMatch）全部亮紅燈，代表「紅隊在場」，跟有沒
     // 有疑似突破無關；沒有對局時維持暗——hasMatch 由呼叫端的
