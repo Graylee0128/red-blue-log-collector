@@ -64,6 +64,14 @@ def events(team: Literal["red", "blue"] | None = None, limit: int = Query(500, g
     return store.list_events(team=team, limit=limit)
 
 
+@app.get("/blue-scores")
+def blue_scores() -> list[dict[str, Any]]:
+    """藍隊修補進度快照（issue #22），blue_score_receiver.py 寫入。已經是
+    leak-filtered 過的資料（隱藏加分題解鎖前不會出現），可以公開讀，跟
+    /events 一樣不需要 purple clearance。"""
+    return store.list_blue_scores()
+
+
 @app.get("/timeline")
 def timeline(limit: int = Query(500, ge=1, le=5000)) -> list[dict[str, Any]]:
     return store.list_events(team=None, limit=limit)
