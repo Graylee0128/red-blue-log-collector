@@ -961,6 +961,7 @@
       refreshBreachPanel(apiBase, correlations, hasData); // 獨立的 fetch（/possible-breaches），失敗不影響上面主要流程
       refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
       refreshBlueShell(apiBase); // 同上
+      refreshBlueProgress(apiBase); // 同上——合併衝突整理時漏掉這行，導致藍隊分數/拓樸格數都卡在空資料
     } catch (err) {
       setStatus("err", "連線失敗");
       errorBanner.hidden = false;
