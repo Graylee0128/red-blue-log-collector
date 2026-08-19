@@ -192,6 +192,26 @@ class EventStore:
             )
             conn.commit()
 
+    def get_blue_score(self, target: str) -> dict[str, Any] | None:
+        """單一 target 目前存的快照（upsert 前的舊值）——issue #33 的
+        blue_score_receiver.py 要拿它跟新報告 diff，找出哪一項 check 剛
+        從 fail 翻 pass。跟 list_blue_scores() 用同一組欄位，只是只查一筆。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT target, total_score, max_score, checks, observed_at FROM blue_scores WHERE target=%s",
+                (target,),
+            ).fetchone()
+        if row is None:
+            return None
+        target_, total_score, max_score, checks, observed_at = row
+        return {
+            "target": target_,
+            "total_score": total_score,
+            "max_score": max_score,
+            "checks": checks,
+            "observed_at": observed_at.isoformat(),
+        }
+
     def list_blue_scores(self) -> list[dict[str, Any]]:
         with self._connect() as conn:
             rows = conn.execute(
