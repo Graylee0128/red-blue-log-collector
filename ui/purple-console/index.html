@@ -62,19 +62,11 @@
   /* 連線位址／重連／狀態／難度切換——除錯跟臨時手動切換用，不是給觀眾
      看的正式面板，隨手塞在頂部統計列尾端，樣式盡量小、不搶版面。難度
      之後要改成由入口（Metis 進場碼/URL 參數）帶進來，這個下拉只是過渡。 */
-  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--color-neutral-500); margin-left: auto; }
-  .controls input, .controls select, .controls button {
-    font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-neutral-900);
-    border: 1px solid var(--color-neutral-700); border-radius: 6px; padding: 3px 8px; cursor: pointer;
-  }
-  .controls input { cursor: text; min-width: 140px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
-  .controls input:focus-visible, .controls select:focus-visible, .controls button:focus-visible {
-    outline: 2px solid var(--color-accent); outline-offset: 2px;
-  }
-  .controls .status { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-  .controls .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-neutral-700); }
-  .controls .status .dot.ok { background: #37e08a; }
-  .controls .status .dot.err { background: #ff4d5e; }
+  /* 連線狀態燈——現場人員一眼確認有沒有連上，詳細文字放 title 提示，
+     不佔版面。灰＝尚未連線，綠＝連線中，紅＝連線失敗（見 setStatus()）。 */
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-neutral-700); margin-left: auto; flex-shrink: 0; }
+  #status-dot.ok { background: #37e08a; }
+  #status-dot.err { background: #ff4d5e; }
 
   .stage-wrap { overflow: auto; border-radius: 16px; }
   .stage {
@@ -99,9 +91,31 @@
   .brand { display: flex; align-items: center; gap: 16.8px; }
   .brand .dot { width: 14px; height: 14px; border-radius: 50%; }
   .stat-row { margin-left: auto; display: flex; align-items: stretch; gap: 14px; }
-  .stat-tile { display: flex; flex-direction: column; gap: 4px; padding: 11.2px 22.4px; border-radius: 8px; background: var(--color-surface); box-shadow: var(--shadow-sm); min-width: 150px; }
+  .stat-tile { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 11.2px 22.4px; border-radius: 8px; background: var(--color-surface); box-shadow: var(--shadow-sm); min-width: 150px; }
   .stat-tile .label { font-size: 20px; color: var(--color-neutral-500); white-space: nowrap; }
   .stat-tile .value { font-size: 34px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+  /* issue #29 item 2：動作／偵測／快速偵測三個 tile 可點擊看明細，反應
+     時間（單一數字，沒有底層清單可列）不適用，維持不可點。 */
+  .stat-tile.clickable { cursor: pointer; }
+  .stat-tile.clickable:hover { background: var(--color-neutral-800); }
+  /* 明細卡片——position:relative 掛在被點的 tile 本身上，absolute 定位
+     用的是父層 padding box，不受 .stage 的 transform:scale 影響，不用
+     另外算縮放係數。z-index 蓋過下面的 board-row 面板。 */
+  .tile-popup { position: absolute; top: calc(100% + 8px); left: 0; z-index: 20; min-width: 280px; max-width: 440px; max-height: 320px; overflow-y: auto; background: var(--color-neutral-900); border: 1px solid var(--color-divider); border-radius: 8px; box-shadow: 0 12px 28px rgba(0,0,0,0.45); padding: 6px; cursor: default; }
+  .tile-popup .popup-title { font-size: 14px; color: var(--color-neutral-500); padding: 4px 8px 8px; border-bottom: 1px solid var(--color-divider); margin-bottom: 4px; }
+  .tile-popup .popup-row { display: flex; gap: 10px; padding: 5px 8px; font-size: 15px; white-space: nowrap; }
+  .tile-popup .popup-row .time { font-family: 'JetBrains Mono', ui-monospace, monospace; color: var(--color-neutral-500); flex-shrink: 0; }
+  .tile-popup .popup-row .type { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+  /* 「未偵測」列（只有「偵測」tile 的完整清單才會出現）整行壓暗，狀態
+     字樣靠右，跟時間軸「未被偵測」的紅色調呼應但不搶眼——這裡只是明細
+     清單，不是主要視覺焦點。 */
+  .tile-popup .popup-row.popup-missed { color: var(--color-neutral-600); }
+  .tile-popup .popup-row .status { flex-shrink: 0; font-size: 13px; color: #ff9aa4; }
+  .tile-popup .popup-empty { padding: 8px; font-size: 14px; color: var(--color-neutral-500); }
+  .tile-popup { scrollbar-width: thin; scrollbar-color: var(--color-neutral-700) transparent; }
+  .tile-popup::-webkit-scrollbar { width: 8px; }
+  .tile-popup::-webkit-scrollbar-track { background: transparent; }
+  .tile-popup::-webkit-scrollbar-thumb { background: var(--color-neutral-700); border-radius: 8px; }
 
   .empty-banner { display: flex; align-items: center; gap: 16.8px; padding: 11.2px 22.4px; border-radius: 8px; background: var(--color-accent-900); border: 1px solid var(--color-accent-700); font-size: 22px; color: var(--color-accent-200); flex-shrink: 0; }
   .error-banner { display: flex; align-items: center; gap: 16.8px; padding: 11.2px 22.4px; border-radius: 8px; background: #3a1620; border: 1px solid #ff4d5e; font-size: 20px; color: #ff9aa4; flex-shrink: 0; }
@@ -232,11 +246,24 @@
   .timeline-title { font-size: 15px; letter-spacing: 0.1em; color: var(--color-neutral-500); white-space: nowrap; flex-shrink: 0; }
   .timeline-legend { margin-left: auto; display: flex; flex-wrap: nowrap; gap: 14px; font-size: 13px; color: var(--color-neutral-400); }
   .timeline-legend span { display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
-  .timeline-cols { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 8px 14px; align-items: center; font-size: 20px; color: var(--color-neutral-600); }
-  /* padding-top 給第一列的危險度亮框（.who.severity-high 的 box-shadow）
-     留暈染空間——overflow:auto 會直接裁掉伸出容器邊界的視覺效果，沒有
-     這點留白，第一列的光暈上緣會被切平。 */
-  .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; padding-top: 8px; }
+  /* sticky 貼在 #timeline-rows 頂端（跟資料列同一個捲動容器，見 HTML
+     端註解）——position:sticky 用的 top:0 是相對這個容器的 padding box，
+     background 要跟面板底色一樣不透明，不然捲動時資料列會從表頭底下
+     透出來。margin-bottom 取代原本 .timeline-rows 的 padding-top：一樣
+     是給第一列危險度亮框的 box-shadow 留暈染空間，只是位置從「整個
+     容器最上緣」改成「表頭跟第一列之間」，因為現在表頭本身也在容器
+     內部、不能再共用同一段 padding。 */
+  .timeline-cols { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 8px 14px; align-items: center; font-size: 20px; color: var(--color-neutral-600); padding: 0 8px; position: sticky; top: 0; z-index: 2; background: var(--color-surface); margin-bottom: 8px; }
+  .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+  /* 深色主題滾輪，取代瀏覽器預設的亮色滾輪（含上下箭頭按鈕），跟整頁色調
+     一致——Firefox 用 scrollbar-width/scrollbar-color，Chromium 系（含投影
+     用的瀏覽器多半是這類）用 ::-webkit-scrollbar。.stage-wrap 是外層容器，
+     視窗比例跟畫布不合時也可能出現捲軸，一併套用同一套樣式。 */
+  .timeline-rows, .stage-wrap { scrollbar-width: thin; scrollbar-color: var(--color-neutral-700) transparent; }
+  .timeline-rows::-webkit-scrollbar, .stage-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
+  .timeline-rows::-webkit-scrollbar-track, .stage-wrap::-webkit-scrollbar-track { background: transparent; }
+  .timeline-rows::-webkit-scrollbar-thumb, .stage-wrap::-webkit-scrollbar-thumb { background: var(--color-neutral-700); border-radius: 8px; }
+  .timeline-rows::-webkit-scrollbar-thumb:hover, .stage-wrap::-webkit-scrollbar-thumb:hover { background: var(--color-neutral-600); }
   .t-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 14px; align-items: center; padding: 4px 8px; border-radius: 6px; border-bottom: 1px solid var(--color-divider); white-space: nowrap; }
   /* 危險度高的攻擊——box-shadow 疊一圈亮框＋外散光，不用 border 是為了
      不影響格線寬度計算（跟其他列的 padding/寬度保持一致）。severity 是
@@ -245,9 +272,15 @@
      跟沒有亮框的列完全一樣，不會因為有沒有 severity-high 而位移。 */
   .t-row .who.severity-high { padding: 3px 8px; margin: -3px -8px; border-radius: 8px; box-shadow: 0 0 0 1px #fff6d1, 0 0 10px rgba(255,246,209,0.55); }
   .t-row .time { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 15px; color: var(--color-neutral-500); }
-  .t-row .who { display: flex; align-items: center; gap: 11.2px; overflow: hidden; }
+  /* 每則通知兩行：上面是類型標籤（原本就有），下面新增紅/藍隊原始輸出
+     內容（issue 使用者要求加回來）。.raw 的 padding-left 對齊 label——
+     跟 dot 寬度(12px) + gap(11.2px) 相加，讓文字對齊在標籤正下方，不是
+     對齊到最左邊的圓點。 */
+  .t-row .who { display: flex; flex-direction: column; gap: 2px; overflow: hidden; padding-block: 2px; }
+  .t-row .who-main { display: flex; align-items: center; gap: 11.2px; overflow: hidden; }
   .t-row .who .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-  .t-row .who .label { font-size: 21px; overflow: hidden; text-overflow: ellipsis; }
+  .t-row .who .label { font-size: 21px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .t-row .who .raw { font-size: 14px; color: var(--color-neutral-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 23.2px; }
   .t-row .bar { height: 3px; }
   .t-row .dash { height: 0; border-top: 2px dashed #ff4d5e; opacity: 0.7; }
   .t-row .miss { display: flex; align-items: center; gap: 11.2px; }
@@ -281,27 +314,20 @@
       <span class="dot" style="background:#4da6ff; box-shadow:0 0 22px rgba(77,166,255,0.55);"></span>
     </div>
     <div class="stat-row">
-      <div class="stat-tile"><span class="label">動作</span><span class="value" id="stat-actions">—</span></div>
-      <div class="stat-tile"><span class="label">偵測</span><span class="value" id="stat-detected">—</span></div>
+      <div class="stat-tile clickable" id="tile-actions" data-metric="actions"><span class="label">動作</span><span class="value" id="stat-actions">—</span></div>
+      <div class="stat-tile clickable" id="tile-detected" data-metric="detected"><span class="label">偵測</span><span class="value" id="stat-detected">—</span></div>
+      <div class="stat-tile clickable" id="tile-fast" data-metric="fast"><span class="label">快速偵測</span><span class="value" id="stat-fast" style="color:#6ee7a2;">—</span></div>
       <div class="stat-tile"><span class="label">反應時間</span><span class="value" id="stat-mttd">—</span></div>
-      <div class="stat-tile"><span class="label">快速偵測</span><span class="value" id="stat-fast" style="color:#6ee7a2;">—</span></div>
       <div style="display:flex; align-items:center; gap:11.2px; font-size:20px; color:var(--color-neutral-400); white-space:nowrap;">
         <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 14px var(--color-accent); animation:pulse 2.4s ease-in-out infinite;"></span>
-        <span>更新於 <span id="stat-updated">—</span></span>
+        <span id="stat-updated">—</span>
       </div>
-      <!-- 臨時擺放——之後藍隊難度要靠入口（Metis 進場碼/URL 參數）分別
-           帶進來，不是這頁自己選；連線位址/狀態也是除錯用，不是給觀眾
-           看的正式面板，先隨手塞在統計列尾端，不特別做版面。 */-->
-      <div class="controls">
-        <select id="difficulty" title="藍隊難度（暫時手動切換，之後由入口決定）">
-          <option value="簡單">簡單</option>
-          <option value="普通" selected>普通</option>
-          <option value="困難">困難</option>
-        </select>
-        <input id="api-base" type="text" placeholder="自動偵測目前主機" spellcheck="false" title="Collector API">
-        <button type="button" id="reconnect">重新連線</button>
-        <span class="status"><span class="dot" id="status-dot"></span><span id="status-text">尚未連線</span></span>
-      </div>
+      <!-- Collector API 位址固定用 defaultApiBase() 自動偵測（跟這頁同一台
+           主機的 :8001），正式部署時 Purple Console 跟 collector 本來就在
+           同網段/同主機，不需要手動輸入位址或按重新連線——8 秒輪詢本身
+           就是自動重試。只留一顆狀態燈給現場人員一眼確認有沒有連上，
+           滑鼠移上去看詳細文字（title），不佔版面。 -->
+      <span class="status" id="status-dot" title="尚未連線"></span>
     </div>
   </div>
 
@@ -339,10 +365,17 @@
           <span><span style="width:16px; height:0; border-top:2px dashed #ff4d5e;"></span>未被偵測</span>
         </div>
       </div>
-      <div class="timeline-cols">
-        <span style="text-align:center;">時間</span><span style="color:#ff8f99; text-align:center;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff; text-align:center;">藍隊事件</span><span style="text-align:right;">延遲</span>
+      <!-- 表頭故意搬進 #timeline-rows 內部（跟資料列同一個 overflow:auto
+           容器），不是外面獨立一塊——之前表頭跟資料列分屬兩個容器，資料
+           列有捲軸吃掉一截寬度、表頭沒有，兩邊 grid 實際內容寬度就是會
+           對不齊，怎麼調 padding 都只能碰運氣猜捲軸寬度。現在同一個容器、
+           同一份捲軸，寬度保證逐像素一致；用 position:sticky 讓表頭捲動
+           時留在最上面，renderTimeline() 只清除 .t-row，不動這個表頭。 -->
+      <div class="timeline-rows" id="timeline-rows">
+        <div class="timeline-cols">
+          <span style="text-align:center;">時間</span><span style="color:#ff8f99; text-align:center;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff; text-align:center;">藍隊事件</span><span style="text-align:right;">延遲</span>
+        </div>
       </div>
-      <div class="timeline-rows" id="timeline-rows"></div>
     </div>
 
     <div class="panel" style="box-shadow:0 0 0 1px #1f3450;">
@@ -386,7 +419,6 @@
 <script>
 (function () {
   var POLL_MS = 8000;
-  var API_KEY = "purple-console.api-base";
   // 靶機淪陷數方塊網格——左邊紅隊攻擊來源、右邊靶機，都匿名、不對應特定
   // 座位/身分，純粹是「打穿了幾台」的視覺化，真資料見 renderBreachPanel
   // （issue #21 疑似突破偵測）。
@@ -395,10 +427,7 @@
   // 至少讓面板看起來不是空的，不代表真實數字。
   var BREACH_GRID_FALLBACK = 6;
 
-  var apiInput = document.getElementById("api-base");
-  var difficultySel = document.getElementById("difficulty");
   var statusDot = document.getElementById("status-dot");
-  var statusText = document.getElementById("status-text");
   var errorBanner = document.getElementById("error-banner");
   var emptyBanner = document.getElementById("empty-banner");
 
@@ -409,12 +438,14 @@
     return n;
   }
 
+  // Purple Console 跟 collector 正式部署時本來就在同一台主機/同網段，
+  // 固定用目前頁面的 hostname 接 :8001，不需要使用者手動輸入或覆寫。
   function defaultApiBase() {
     var host = window.location.hostname || "localhost";
     return "http://" + host + ":8001";
   }
 
-  apiInput.value = localStorage.getItem(API_KEY) || defaultApiBase();
+  var apiBase = defaultApiBase();
 
   function fmtTime(iso) {
     if (!iso) return "—";
@@ -480,19 +511,28 @@
   //
   // issue #20 時間軸雜訊過濾：只顯示有真實檢測結果的事件（c.status === "hit"）。
   // 不用 technique 過濾——technique 只是 11 條規則的標籤，沒命中規則
-  // 但確實被偵測到的攻擊會被誤隱。此層只過濾顯示，不影響 red_actions 統計。
-  function buildChain(correlations) {
-    return correlations.slice().reverse().filter(function (c) {
-      // 只顯示真實檢測到的攻擊（status === "hit"）
-      return c.status === "hit";
-    }).map(function (c) {
+  // 但確實被偵測到的攻擊會被誤隱。
+  //
+  // issue #29 item 1：buildChain() 的過濾結果同時也是「動作」統計 tile
+  // 的口徑（見 refresh() 裡直接用 chain.length，不再用伺服器端的
+  // red_actions），時間軸顯示筆數跟頂欄數字保證一致，不會分開算到分岔。
+  //
+  // buildAllActions() 是不過濾的完整版本（含未被偵測的），「偵測」tile
+  // 的明細卡片要用——顯示的數字是「X / Y」比例，點開理應看得到完整的
+  // Y 筆、每筆標出有沒有被偵測到，不能只給時間軸看得到的那 X 筆
+  // （buildChain 過濾掉的部分）。兩個函式共用同一份逐筆計算邏輯，避免
+  // 兩處欄位算法分開維護後兜不起來。
+  function buildAllActions(correlations) {
+    return correlations.slice().reverse().map(function (c) {
       var fast = c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
       var slow = c.status === "hit" && !fast;
       var missed = c.status !== "hit";
       return {
         time: fmtTime(c.red ? c.red.observed_at : null),
         redLabel: typeLabel(c.red, c.technique) || "(unclassified)",
+        redMessage: c.red ? c.red.message : null,
         blueLabel: missed ? null : typeLabel(c.blue, null),
+        blueMessage: missed ? null : (c.blue ? c.blue.message : null),
         missed: missed,
         fast: fast,
         slow: slow,
@@ -502,19 +542,46 @@
     });
   }
 
+  function buildChain(correlations) {
+    // issue #20 時間軸雜訊過濾：只顯示有真實檢測結果的事件（!missed）。
+    // 不用 technique 過濾——technique 只是 11 條規則的標籤，沒命中規則
+    // 但確實被偵測到的攻擊會被誤隱。
+    return buildAllActions(correlations).filter(function (item) {
+      return !item.missed;
+    });
+  }
+
   function bar(color) {
     var b = el("span", "bar");
     b.style.background = "linear-gradient(90deg, " + color + "33, " + color + ")";
     return b;
   }
 
+  // 類型標籤（第一行，白名單翻譯字串，維持原本 innerHTML 組法）+ 原始
+  // 輸出內容（第二行）的儲存格。第二行是紅隊在終端機打的原始指令／藍隊
+  // 原始日誌訊息，未經任何清洗，一律用 textContent 塞，不能跟第一行一樣
+  // 用字串接 innerHTML——這頁是投影給全場看的公開頁面，攻擊者打的字直接
+  // 進 HTML 會有 XSS 風險（跟 Red/Blue Shell 的 shellLine() 同一個理由）。
+  function whoCell(dotColor, glowColor, label, rawMessage, severityHigh) {
+    var cell = el("span", "who" + (severityHigh ? " severity-high" : ""));
+    cell.appendChild(el("span", "who-main", '<span class="dot" style="background:' + dotColor + '; box-shadow:0 0 12px ' + glowColor + ';"></span><span class="label">' + label + "</span>"));
+    var raw = document.createElement("span");
+    raw.className = "raw";
+    raw.textContent = rawMessage || "";
+    cell.appendChild(raw);
+    return cell;
+  }
+
   function renderTimeline(chain) {
     var host = document.getElementById("timeline-rows");
-    host.innerHTML = "";
+    // 只清資料列，不能再用 host.innerHTML = ""——表頭（.timeline-cols）
+    // 現在是這個容器的第一個子元素（sticky header，見 HTML/CSS 端註解），
+    // 整個清空會連表頭一起砍掉。
+    host.querySelectorAll(".t-row").forEach(function (row) { row.remove(); });
     chain.forEach(function (item) {
       var row = el("div", "t-row");
       row.appendChild(el("span", "time", item.time));
-      row.appendChild(el("span", "who" + (item.severityHigh ? " severity-high" : ""), '<span class="dot" style="background:#ff4d5e; box-shadow:0 0 12px rgba(255,77,94,0.6);"></span><span class="label">' + item.redLabel + "</span>"));
+      row.appendChild(whoCell("#ff4d5e", "rgba(255,77,94,0.6)", item.redLabel, item.redMessage, item.severityHigh));
       if (item.fast) {
         row.appendChild(bar("#37e08a"));
       } else if (item.slow) {
@@ -525,7 +592,7 @@
       if (item.missed) {
         row.appendChild(el("span", "miss", '<span class="ring"></span><span class="txt">未被偵測</span>'));
       } else if (item.blueLabel) {
-        row.appendChild(el("span", "who", '<span class="dot" style="background:#4da6ff; box-shadow:0 0 12px rgba(77,166,255,0.6);"></span><span class="label">' + item.blueLabel + "</span>"));
+        row.appendChild(whoCell("#4da6ff", "rgba(77,166,255,0.6)", item.blueLabel, item.blueMessage, false));
       } else {
         row.appendChild(el("span", ""));
       }
@@ -533,6 +600,105 @@
       host.appendChild(row);
     });
   }
+
+  // issue #29 item 2：動作／偵測／快速偵測三個 tile 點擊看明細（精簡版：
+  // 只列時間+類型），用這次輪詢已經算好的 chain，不額外打 API。「動作」
+  // 「偵測」目前口徑相同（都是 buildChain 過濾後的 hit 清單，見 item 1
+  // 的註解），共用同一份清單；「快速偵測」是其中 latency < 30 秒的子集。
+  var lastChain = [];
+  var lastAllActions = [];
+  var openTileMetric = null;
+
+  var METRIC_TITLES = { actions: "動作", detected: "偵測", fast: "快速偵測" };
+
+  // 「偵測」tile 顯示的是「X / Y」比例（見 refresh()），明細要對得起這個
+  // 分數——用 lastAllActions（buildAllActions() 的完整版本，含未被偵測
+  // 的），不能只給 lastChain（時間軸看得到的那 X 筆）。「動作」跟「快速
+  // 偵測」則要跟畫面上其他地方（時間軸、tile 數字本身）口徑一致，維持
+  // 只看 lastChain。
+  function metricList(metric) {
+    if (metric === "fast") {
+      return lastChain.filter(function (item) { return item.fast; });
+    }
+    if (metric === "detected") {
+      return lastAllActions;
+    }
+    return lastChain;
+  }
+
+  function closeTilePopup() {
+    var existing = document.querySelector(".tile-popup");
+    if (existing) existing.remove();
+    openTileMetric = null;
+  }
+
+  function renderTilePopup(metric, anchorEl) {
+    var items = metricList(metric);
+    var popup = el("div", "tile-popup");
+    popup.appendChild(el("div", "popup-title", METRIC_TITLES[metric] + "・" + items.length + " 筆"));
+    if (items.length === 0) {
+      popup.appendChild(el("div", "popup-empty", "目前沒有資料"));
+    } else {
+      items.forEach(function (item) {
+        var row = el("div", "popup-row" + (item.missed ? " popup-missed" : ""));
+        var t = document.createElement("span");
+        t.className = "time";
+        t.textContent = item.time;
+        row.appendChild(t);
+        var ty = document.createElement("span");
+        ty.className = "type";
+        ty.textContent = item.redLabel;
+        row.appendChild(ty);
+        // 「偵測」明細（lastAllActions）才會混到未被偵測的項目，補一個
+        // 狀態字樣——「動作」「快速偵測」的清單本來就已經全部是命中的，
+        // item.missed 一定是 false，不會多出這個標籤。
+        if (item.missed) {
+          var st = document.createElement("span");
+          st.className = "status";
+          st.textContent = "未偵測";
+          row.appendChild(st);
+        }
+        popup.appendChild(row);
+      });
+    }
+    anchorEl.appendChild(popup);
+  }
+
+  function toggleTilePopup(metric, anchorEl) {
+    if (openTileMetric === metric) {
+      closeTilePopup();
+      return;
+    }
+    closeTilePopup();
+    renderTilePopup(metric, anchorEl);
+    openTileMetric = metric;
+  }
+
+  // 每輪 /analysis 抓到新資料時，如果明細卡片還開著，就地重繪內容，
+  // 不然卡片會停在上一輪的舊清單，跟頁面其他地方（時間軸、tile 數字）
+  // 對不上。
+  function refreshOpenTilePopup() {
+    if (!openTileMetric) return;
+    var metric = openTileMetric;
+    var anchor = document.getElementById("tile-" + metric);
+    closeTilePopup();
+    renderTilePopup(metric, anchor);
+    openTileMetric = metric;
+  }
+
+  ["tile-actions", "tile-detected", "tile-fast"].forEach(function (id) {
+    var tile = document.getElementById(id);
+    tile.addEventListener("click", function (evt) {
+      evt.stopPropagation();
+      toggleTilePopup(tile.dataset.metric, tile);
+    });
+  });
+
+  document.addEventListener("click", function (evt) {
+    var popup = document.querySelector(".tile-popup");
+    if (popup && popup.contains(evt.target)) return;
+    closeTilePopup();
+  });
 
   // active：全部格子一起亮或一起暗（不是逐格點亮），紅隊來源格代表的是
   // 「紅隊在場」，不是個別攻擊行動的計數，跟靶機格那種逐格點亮語意不同。
@@ -711,11 +877,11 @@
     renderBreachPanel(correlations, externalSize, internalSize, hasMatch, redSeatCount);
   }
 
-  // 藍隊整體修補進度：跟藍隊組長確認過的實際題目結構——簡單/普通是原本
-  // 5 題（checker.py 的 vuln1-5），困難是 7 題（多兩題隱藏加分題）。難度
-  // 選單（isHardMode()，定義在下面）決定這裡只畫幾格，兩種難度共用同一
-  // 套元件，不再另外做「稽核覆蓋率」那套（舊版本，已證實跟實際題目結構
-  // 不符，整塊移除）。
+  // 藍隊整體修補進度：跟藍隊組長二次確認過——三個難度玩的是同一台靶機、
+  // 同樣 7 關（checker.py 的 vuln1-7，5 題公開 + 2 題隱藏加分題），
+  // checker 輸出一模一樣，難度不影響題目結構，固定 7 格，不分難度。
+  // 「稽核覆蓋率」那套（曾經以為困難模式是完全不同機制）已證實不是
+  // 目前的真實設計，整塊移除；難度下拉選單也拿掉了，不再有東西可切。
   function average(nums) {
     return nums.reduce(function (a, b) { return a + b; }, 0) / nums.length;
   }
@@ -748,8 +914,8 @@
     lastBlueSeatCount = totalSeats;
     var hasData = scores.length > 0;
     var denom = Math.max(scores.length, totalSeats) || 1;
-    var checkCount = isHardMode() ? 7 : 5; // 困難才有兩題隱藏加分題
-    var fallbackMax = isHardMode() ? 140 : 100;
+    var checkCount = 7; // 5 題公開 + 2 題隱藏加分題，三個難度都一樣
+    var fallbackMax = 140;
 
     var avgScore = hasData ? average(scores.map(function (s) { return s.total_score; })) : 0;
     var avgMax = hasData ? average(scores.map(function (s) { return s.max_score; })) : fallbackMax;
@@ -759,19 +925,16 @@
       hasData ? Math.round((avgScore / avgMax) * 100) + "%" : "0%";
 
     // 第 i 格的完成比例／計數＝checks[i] 存在且 pass 的席位數／denom
-    // （見上方 denom 說明）。簡單/普通模式下 checkCount=5，迴圈本來就
-    // 不會跑到 index 5/6，兩顆隱藏加分題完全不會出現在畫面上（不是
-    // 虛線、是直接不畫），跟困難模式共用同一段迴圈邏輯就好，不用另外
-    // 判斷。
+    // （見上方 denom 說明）。
     var passCounts = [];
     for (var idx = 0; idx < checkCount; idx++) {
       passCounts.push(scores.filter(function (s) { return s.checks[idx] && s.checks[idx].status === "pass"; }).length);
     }
 
-    // 困難模式最後兩格（隱藏加分題）0 人完成時是虛線、不填色、不疊字；
-    // 一旦有人過就變成一般格子，但疊字只顯示完成人數，不顯示分母（跟
-    // 前 5 格的 "X/N" 不同——使用者明確要求的呈現方式，不是遺漏）。
-    var HIDDEN_INDICES = isHardMode() ? [5, 6] : [];
+    // 最後兩格（隱藏加分題）0 人完成時是虛線、不填色、不疊字；一旦有人
+    // 過就變成一般格子，但疊字只顯示完成人數，不顯示分母（跟前 5 格的
+    // "X/N" 不同——使用者明確要求的呈現方式，不是遺漏）。
+    var HIDDEN_INDICES = [5, 6];
 
     var host = document.getElementById("blue-cells");
     host.innerHTML = "";
@@ -951,16 +1114,7 @@
   // 「目前有沒有對局在跑」（hasMatch，來自 /analysis 的 red_actions）——
   // 有對局才顯示示意用的靜止進度條，沒有就直接講清楚「目前無對局中」，
   // 不要讓觀眾誤以為空白的清單是資料還沒載入。
-  // 難度只決定 blue-patch 面板裡要畫幾格（見 renderBlueProgress 的
-  // checkCount），不再切換成另一塊完全不同的面板——舊的「稽核覆蓋率」
-  // 是照錯誤的題目結構假設做的，已經整塊移除。難度切換不影響「有沒有
-  // 對局」，所以另外存 lastHasMatch，切換難度時重算一次可見度、並用
-  // 快取的 lastBlueScores 重畫格子，不用重新打 API。
   var lastHasMatch = false;
-
-  function isHardMode() {
-    return difficultySel.value === "困難";
-  }
 
   function updateBluePanelMode() {
     document.getElementById("blue-patch").hidden = !lastHasMatch;
@@ -982,14 +1136,11 @@
   }
 
   function setStatus(state, text) {
-    statusDot.className = "dot" + (state ? " " + state : "");
-    statusText.textContent = text;
+    statusDot.className = state || "";
+    statusDot.title = text;
   }
 
   async function refresh() {
-    var apiBase = apiInput.value.trim().replace(/\/$/, "");
-    localStorage.setItem(API_KEY, apiBase);
-
     try {
       // caller 不帶、預設 public——這頁是給全場觀眾看的公開戰況板，不需要
       // purple token，後端 /analysis 本來就只會回傳 hit 列給 public caller。
@@ -1005,15 +1156,23 @@
       emptyBanner.hidden = hasData;
       setPanelState(hasData);
 
-      document.getElementById("stat-actions").textContent = data.red_actions ?? "—";
+      // issue #29 item 1：「動作」改直接算 buildChain() 過濾後的筆數，
+      // 不再用 data.red_actions（伺服器端全量，含時間軸不顯示的 gap）——
+      // 兩處口徑分開算很容易之後改了 buildChain 卻忘記同步這裡，改成
+      // 共用同一份 chain 從根本上避免對不上。
+      var chain = buildChain(correlations);
+      lastChain = chain; // 給 tile 明細卡片（issue #29 item 2）用，同一份資料，不重打 API
+      lastAllActions = buildAllActions(correlations); // 給「偵測」明細用，含未被偵測的完整版本
+      document.getElementById("stat-actions").textContent = chain.length;
       document.getElementById("stat-detected").textContent = hasData ? (data.detected + " / " + data.red_actions) : "—";
-      document.getElementById("stat-mttd").textContent = fmtMttd(data.mttd_p50_ms);
-      document.getElementById("stat-fast").textContent = correlations.filter(function (c) {
-        return c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
+      document.getElementById("stat-fast").textContent = chain.filter(function (item) {
+        return item.fast;
       }).length;
-      document.getElementById("stat-updated").textContent = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+      document.getElementById("stat-mttd").textContent = fmtMttd(data.mttd_p50_ms);
 
-      renderTimeline(buildChain(correlations));
+      renderTimeline(chain);
+      refreshOpenTilePopup(); // 卡片還開著就跟著這輪資料重繪，不留舊清單
+
       refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
       refreshBlueShell(apiBase); // 同上
       // refreshBreachPanel 會讀 lastBlueScores／lastBlueSeatCount（藍隊
@@ -1030,9 +1189,6 @@
       errorBanner.textContent = "抓不到 " + apiBase + "/analysis：" + err.message + "（確認 API 位址、CORS）";
     }
   }
-
-  document.getElementById("reconnect").addEventListener("click", refresh);
-  difficultySel.addEventListener("change", updateBluePanelMode);
 
   // 寬高都納入計算、取較小的縮放比——保證整張 1920×1080 畫布一定完整
   // 可見，不會被裁掉；長寬比對不上視窗時，代價是上下或左右留一點空白
@@ -1066,6 +1222,15 @@
   renderBlueProgress([], 0);
   renderIdleBlueShell();
   document.getElementById("red-shell").appendChild(shellLine("#ff6b78", RED_PROMPT, null, null, caretEl("#ff6b78")));
+  // 「更新於」改成獨立即時時鐘（issue #29 item 4）：不綁 /analysis 輪詢
+  // 週期（原本 8 秒才動一次，看起來像卡住），改成每秒自己 tick，單純顯示
+  // 目前時刻，跟後面資料有沒有抓到新東西無關。
+  function tickClock() {
+    document.getElementById("stat-updated").textContent = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
   refresh();
   setInterval(refresh, POLL_MS);
 })();
