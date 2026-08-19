@@ -113,7 +113,11 @@
      換到下一欄，不用寫死總數對應幾欄。 */
   .patch-grid { flex: 1; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: center; justify-content: center; gap: 10px 20px; }
   .patch-pair { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
-  .patch-cell { width: 44px; height: 44px; flex-shrink: 0; border-radius: 8px; background: var(--color-neutral-900); border: 1px solid var(--color-neutral-800); position: relative; overflow: hidden; }
+  /* 格子尺寸由 --breach-cell-size 這個 CSS 變數控制（見 renderBreachPanel
+     的 cellSizeForCount()）——靶機/來源數量少時格子大，數量一多就自動縮
+     小塞進同一塊面板，不用寫死。44px 是變數沒設定時（例如面板還沒渲染
+     過）的預設值，不是實際上限。 */
+  .patch-cell { width: var(--breach-cell-size, 44px); height: var(--breach-cell-size, 44px); flex-shrink: 0; border-radius: 8px; background: var(--color-neutral-900); border: 1px solid var(--color-neutral-800); position: relative; overflow: hidden; transition: width 0.3s ease, height 0.3s ease; }
   .patch-cell-fill { position: absolute; inset: 0; background: linear-gradient(135deg, #1f4a70, #4da6ff); opacity: 0; transition: opacity 0.4s ease; }
   .patch-link { width: 20px; height: 3px; background: var(--color-neutral-700); flex-shrink: 0; }
   /* 對局中的常駐藍燈——藍隊自己的主題色，代表「藍隊在場」，跟左邊紅隊
@@ -121,11 +125,11 @@
      的藍色漸層，只是把 opacity 從 0 打開，不是新顏色。 */
   .patch-cell-fill.active { opacity: 0.45; }
   /* 疑似突破（issue #21，breach_detector.py 的啟發式 pivot 偵測）——刻意
-     用琥珀色＋脈動，跟上面「對局中」的藍色 active 狀態區分開，不能讓
+     用紅色＋脈動，跟上面「對局中」的藍色 active 狀態區分開，不能讓
      觀眾把推論當成權威判定；suspected 跟 active 互斥，見 renderBreachPanel。 */
-  .patch-cell-fill.suspected { opacity: 0.6; background: linear-gradient(135deg, #7a4a1f, #ffb84d); animation: pulse 2s ease-in-out infinite; }
+  .patch-cell-fill.suspected { opacity: 0.75; background: linear-gradient(135deg, #7a1414, #ff3b3b); box-shadow: 0 0 10px 2px rgba(255,59,59,0.5); animation: pulse 2s ease-in-out infinite; }
   .breach-legend { font-size: 13px; color: var(--color-neutral-500); text-align: center; margin-top: 4px; }
-  .breach-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ffb84d; margin-right: 6px; vertical-align: middle; }
+  .breach-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b; margin-right: 6px; vertical-align: middle; }
 
   /* 藍隊整體修補進度——大分數是**全隊平均**（所有回報中的席位 total_score
      取平均，不是單一席位），滿分同樣取所有席位 max_score 的平均（鎖定/
@@ -148,7 +152,7 @@
      大家卡最久」這種全隊視角，單一席位的 pass/fail 反而沒有意義（見
      issue #22 後續討論，使用者要求把單席位畫面換成全隊聚合）。 */
   .cell { width: 68px; height: 68px; border-radius: 10px; box-sizing: border-box; background: var(--color-neutral-800); position: relative; overflow: hidden; }
-  .cell-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: linear-gradient(180deg, #22d3ee, #1a3a6b); transition: height 0.4s ease; }
+  .cell-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: linear-gradient(135deg, #22d3ee, #1a3a6b); transition: height 0.4s ease; }
   /* 最後兩格（隱藏加分題，vuln6/vuln7）在還沒有任何一台席位過關前畫虛線
      框，不填色、不疊字——跟前 5 格「即使 0 人過也是實心 + 0/N」不同，這
      兩格在 0 人完成時代表「還不確定有沒有人碰得到這關」，用虛線跟「已知
@@ -174,14 +178,14 @@
   .breach-grid { display: flex; flex-direction: column; flex-wrap: wrap; max-height: 252px; align-content: center; justify-content: center; align-self: center; gap: 8px; }
   .breach-cell { width: 44px; height: 44px; flex-shrink: 0; border-radius: 6px; background: var(--color-neutral-900); border: 1px solid #5c2530; transition: background 0.4s ease, border-color 0.4s ease; }
   /* 對局中（不管有沒有疑似突破）全部常駐紅燈，代表「紅隊在場」——紅隊
-     自己的主題色，穩定不脈動（脈動保留給琥珀色的警示語意，這裡只是
+     自己的主題色，穩定不脈動（脈動保留給紅色的警示語意，這裡只是
      「有人在」的狀態燈）。 */
   .breach-cell.active { background: linear-gradient(135deg, #7a1f2a, #ff4d5e); border-color: #ff4d5e; }
   /* 紅→藍中間的光束——只在有疑似突破時出現，一顆發光小球在兩欄之間來回
      跑，呼應「紅隊打過去」這個方向性。絕對定位、蓋在 .breach-view 中間，
      不佔版面（不會把兩欄擠窄）。 */
   .attack-beam { position: absolute; left: 50%; top: 50%; width: 70px; height: 0; transform: translate(-50%, -50%); pointer-events: none; }
-  .attack-beam .pulse-dot { position: absolute; top: -4px; left: -10px; width: 9px; height: 9px; border-radius: 50%; background: #ffb84d; box-shadow: 0 0 12px 4px rgba(255,184,77,0.75); animation: beam-travel 1.3s ease-in-out infinite; }
+  .attack-beam .pulse-dot { position: absolute; top: -4px; left: -10px; width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 12px 4px rgba(255,59,59,0.75); animation: beam-travel 1.3s ease-in-out infinite; }
   @keyframes beam-travel { 0% { left: -10px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
 
   .timeline-head { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; }
@@ -289,7 +293,7 @@
         <div class="attack-beam" id="attack-beam" hidden><div class="pulse-dot"></div></div>
         <div class="clash-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
-      <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破（終端機主機名稱偵測，未確認）</div>
+      <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破</div>
     </div>
 
     <div class="panel" style="box-shadow:var(--shadow-sm);">
@@ -514,6 +518,21 @@
     return seen.size;
   }
 
+  // 格子大小隨數量反向縮放——人少時格子大、視覺清楚，人一多就自動縮小
+  // 塞進同一塊面板，不會爆版。上下限跟藍隊修補格（固定 68px、7 格）刻意
+  // 分開算，因為這裡的靶機數是動態的、可能只有 1 台也可能到十幾台。
+  var CELL_SIZE_MAX = 56;
+  var CELL_SIZE_MIN = 26;
+  var CELL_SIZE_MAX_AT_COUNT = 3;  // <= 這個數量用最大格子
+  var CELL_SIZE_MIN_AT_COUNT = 16; // >= 這個數量用最小格子
+
+  function cellSizeForCount(count) {
+    if (count <= CELL_SIZE_MAX_AT_COUNT) return CELL_SIZE_MAX;
+    if (count >= CELL_SIZE_MIN_AT_COUNT) return CELL_SIZE_MIN;
+    var t = (count - CELL_SIZE_MAX_AT_COUNT) / (CELL_SIZE_MIN_AT_COUNT - CELL_SIZE_MAX_AT_COUNT);
+    return Math.round(CELL_SIZE_MAX - t * (CELL_SIZE_MAX - CELL_SIZE_MIN));
+  }
+
   // externalCount／internalCount：issue #21 breach_detector.py 依 pivot
   // 深度分出的兩層（見 breach_detector.py 的 find_pivot_targets()
   // docstring——hop=1 只可能是外網 blue-a，hop>=2 才代表已經先站上 blue-a
@@ -528,6 +547,10 @@
     hasMatch = !!hasMatch;
     var realCount = distinctDestinationCount(correlations);
     var count = realCount || BREACH_GRID_FALLBACK;
+
+    // --breach-cell-size 設在 .breach-view 上，origin-grid／target-grid
+    // 兩邊的格子都靠 CSS 變數繼承拿到同一個尺寸，兩邊格子大小才會同步。
+    document.getElementById("red-breach").style.setProperty("--breach-cell-size", cellSizeForCount(count) + "px");
 
     // 只有真的有對局資料（realCount > 0）才疊加疑似突破——沒有真實
     // correlation 資料時 count 是保底假數字，疊上去會誤導。
@@ -547,7 +570,7 @@
 
     // 每個靶機是一對方塊（外網／內網），跟藍隊修補格同一套元件。base 狀態
     // （對局中、沒被標成疑似突破）是常駐藍燈，代表「藍隊在場」；被標成
-    // 疑似突破的格子蓋成琥珀色警示，兩者互斥，疑似突破優先顯示。
+    // 疑似突破的格子蓋成紅色警示，兩者互斥，疑似突破優先顯示。
     var targetHost = document.getElementById("target-grid");
     targetHost.innerHTML = "";
     for (var i = 0; i < count; i++) {
@@ -560,8 +583,8 @@
   }
 
   // 紅隊攻擊拓樸右側靶機格：每格代表一台靶機的其中一台機器（外網／
-  // 內網）。state="suspected" 是 issue #21 的啟發式 pivot 偵測結果（琥珀
-  // 色脈動）——不是確認過的攻擊成功。state="active" 是「對局中、藍隊在場」
+  // 內網）。state="suspected" 是 issue #21 的啟發式 pivot 偵測結果（紅
+  // 色脈動警示）——不是確認過的攻擊成功。state="active" 是「對局中、藍隊在場」
   // 的常駐藍燈（沿用既有的 patch-cell-fill 藍色漸層，只是把 opacity 從
   // 0 打開，不是新顏色）。state="none"（沒有對局）維持空白，不編造。
   function patchCell(state) {
