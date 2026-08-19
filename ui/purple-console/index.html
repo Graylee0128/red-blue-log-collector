@@ -212,7 +212,7 @@
      從版面移除，這樣光束出現/消失不會讓兩邊格子的位置跳動。 */
   /* margin-left 只拉近跟紅隊那側的間距，右邊（跟藍隊那側）的 gap 不動
      ——只往左移，不會跟藍隊格子靠更近。 */
-  .attack-beam { position: relative; width: 24px; height: 20px; flex-shrink: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s ease; margin-left: -6px; }
+  .attack-beam { position: relative; width: 24px; height: 20px; flex-shrink: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s ease; margin-left: -18px; }
   .attack-beam.visible { opacity: 1; }
   .attack-beam .pulse-dot { position: absolute; top: 50%; left: -10px; margin-top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 12px 4px rgba(255,59,59,0.75); animation: beam-travel 1.3s ease-in-out infinite; }
   /* 拖尾——子元素會跟著 .pulse-dot 的 left 動畫一起移動，不用另外算位置。
