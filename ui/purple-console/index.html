@@ -581,20 +581,27 @@
   // （格子純粹是「有幾台不同的靶機」的計數，不是特定哪一台），所以沒辦法
   // 精準點亮「就是那一台」，只能點亮前 N 對的外網／內網格——跟這個面板
   // 既有的「只給數量、不給身份」設計一致，不是新的簡化。
-  function renderBreachPanel(correlations, externalCount, internalCount, hasMatch) {
+  function renderBreachPanel(correlations, externalCount, internalCount, hasMatch, redSeatCount) {
     correlations = correlations || [];
     externalCount = externalCount || 0;
     internalCount = internalCount || 0;
     hasMatch = !!hasMatch;
-    // 總靶機數改用藍隊席位數（藍隊修補進度面板快取的同一份資料，見下面
-    // renderBlueProgress）——舊版用 distinctDestinationCount(correlations)
-    // 只算紅隊「已經打過」的 destination，演練剛開始、紅隊還沒出手時
-    // 永遠是 0，格子看起來一直是空的。lastBlueSeatCount（/blue-seats，
-    // 掃 seat log 目錄）比 lastBlueScores.length（/blue-scores，只有真的
-    // 回報分數的席位）更準——同樣是 auto_watch.sh 沒涵蓋 blue-b-* 的
-    // 已知限制，取兩者較大值兜底。
+    redSeatCount = redSeatCount || 0;
+    // 靶機格總數（右邊）改用藍隊席位數（藍隊修補進度面板快取的同一份
+    // 資料，見下面 renderBlueProgress）——舊版用
+    // distinctDestinationCount(correlations) 只算紅隊「已經打過」的
+    // destination，演練剛開始、紅隊還沒出手時永遠是 0，格子看起來一直
+    // 是空的。lastBlueSeatCount（/blue-seats，掃 seat log 目錄）比
+    // lastBlueScores.length（/blue-scores，只有真的回報分數的席位）
+    // 更準——同樣是 auto_watch.sh 沒涵蓋 blue-b-* 的已知限制，取兩者
+    // 較大值兜底。
     var realCount = Math.max(lastBlueScores.length, lastBlueSeatCount);
     var count = realCount || BREACH_GRID_FALLBACK;
+    // 來源格總數（左邊）改用真實紅隊席位數（/red-seats，跟藍隊那組對稱，
+    // seat_log_receiver.py 順手記）——不再跟右邊的靶機數綁死（見使用者
+    // 回饋：兩邊格數同步時，藍隊席位數一改，左邊會顯示不存在的紅隊
+    // 席位）。抓不到就退回跟右邊一樣的保底數字，單純讓面板看起來不空。
+    var originCount = redSeatCount || count;
 
     // 只有真的有對局資料（realCount > 0）才疊加疑似突破——沒有真實
     // correlation 資料時 count 是保底假數字，疊上去會誤導。這段要先做：
@@ -618,11 +625,13 @@
     document.getElementById("attack-beam").classList.toggle("visible", showSuspected);
 
     // --breach-cell-size 設在 .breach-view 上，origin-grid／target-grid
-    // 兩邊的格子都靠 CSS 變數繼承拿到同一個尺寸，兩邊格子大小才會同步。
-    // --breach-cols／--patch-cols 是左右兩邊固定的欄數（2），兩邊用同一
-    // 組數字、同一套 grid 排法，形狀才會對得起來。
+    // 兩邊的格子都靠 CSS 變數繼承拿到同一個尺寸，兩邊格子大小才會同步
+    // （即使兩邊格數不同也一樣大）。--breach-cols／--patch-cols 是左右
+    // 兩邊固定的欄數（2），量測用兩邊數量取較大值（layoutCount）算尺寸，
+    // 保證比較擠的那一邊也塞得下，另一邊格數少、自然用不到那麼多排。
+    var layoutCount = Math.max(count, originCount);
     var breachViewEl = document.getElementById("red-breach");
-    var layout = fitCellLayout(count);
+    var layout = fitCellLayout(layoutCount);
     breachViewEl.style.setProperty("--breach-cell-size", layout.size + "px");
     breachViewEl.style.setProperty("--breach-cols", layout.cols);
     breachViewEl.style.setProperty("--patch-cols", layout.cols);
@@ -636,8 +645,9 @@
 
     // 紅隊來源格：對局中（hasMatch）全部亮紅燈，代表「紅隊在場」，跟有沒
     // 有疑似突破無關；沒有對局時維持暗——hasMatch 由呼叫端的
-    // red_actions > 0 決定，這支函式不重算。
-    fillCellGrid("origin-grid", count, hasMatch);
+    // red_actions > 0 決定，這支函式不重算。格數用 originCount（自己的
+    // 真實紅隊席位數），不是 count（靶機數）。
+    fillCellGrid("origin-grid", originCount, hasMatch);
 
     // 每個靶機是一對方塊（外網／內網），跟藍隊修補格同一套元件。base 狀態
     // （對局中、沒被標成疑似突破）是常駐藍燈，代表「藍隊在場」；被標成
@@ -672,6 +682,8 @@
   // 要點亮幾對靶機格的哪一邊。抓不到就當作 0（沒有疑似突破），不影響
   // 上面主要的 correlations 畫面。
   async function refreshBreachPanel(apiBase, correlations, hasMatch) {
+    var externalSize = 0;
+    var internalSize = 0;
     try {
       var res = await fetch(apiBase + "/possible-breaches");
       if (!res.ok) throw new Error("HTTP " + res.status);
@@ -681,10 +693,22 @@
       breaches.forEach(function (b) {
         (b.layer === "internal" ? internal : external).add(b.target_host);
       });
-      renderBreachPanel(correlations, external.size, internal.size, hasMatch);
+      externalSize = external.size;
+      internalSize = internal.size;
     } catch (err) {
-      renderBreachPanel(correlations, 0, 0, hasMatch);
+      externalSize = 0;
+      internalSize = 0;
     }
+    var redSeatCount = 0;
+    try {
+      var seatRes = await fetch(apiBase + "/red-seats");
+      if (!seatRes.ok) throw new Error("HTTP " + seatRes.status);
+      var redSeats = await seatRes.json();
+      redSeatCount = redSeats.length;
+    } catch (err) {
+      redSeatCount = 0; // 抓不到就讓 renderBreachPanel 自己退回跟靶機數一樣
+    }
+    renderBreachPanel(correlations, externalSize, internalSize, hasMatch, redSeatCount);
   }
 
   // 藍隊整體修補進度：跟藍隊組長確認過的實際題目結構——簡單/普通是原本

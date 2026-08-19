@@ -70,6 +70,14 @@ CREATE TABLE IF NOT EXISTS blue_seats (
   seat TEXT PRIMARY KEY,
   first_seen TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- 紅隊席位「存在」清單——跟 blue_seats 對稱設計，seat_log_receiver.py
+-- 本來就在 tail *.cmd，順手記，不用另開輪詢程式。攻擊拓樸面板的左側
+-- 來源格用這個當自己的真實計數，不再跟右側靶機格數綁死（issue #21
+-- 後續討論）。
+CREATE TABLE IF NOT EXISTS red_seats (
+  seat TEXT PRIMARY KEY,
+  first_seen TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
@@ -242,6 +250,21 @@ class EventStore:
     def list_known_blue_seats(self) -> list[str]:
         with self._connect() as conn:
             rows = conn.execute("SELECT seat FROM blue_seats ORDER BY seat").fetchall()
+        return [seat for (seat,) in rows]
+
+    def record_known_red_seat(self, *, seat: str) -> bool:
+        """跟 record_known_blue_seat 對稱——只留第一次看到的時間，冪等。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "INSERT INTO red_seats (seat) VALUES (%s) ON CONFLICT (seat) DO NOTHING RETURNING seat",
+                (seat,),
+            ).fetchone()
+            conn.commit()
+            return row is not None
+
+    def list_known_red_seats(self) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT seat FROM red_seats ORDER BY seat").fetchall()
         return [seat for (seat,) in rows]
 
     def list_events(self, team: str | None = None, limit: int = 200) -> list[dict[str, Any]]:

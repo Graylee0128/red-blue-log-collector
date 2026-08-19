@@ -82,6 +82,15 @@ def blue_seats() -> list[str]:
     return store.list_known_blue_seats()
 
 
+@app.get("/red-seats")
+def red_seats() -> list[str]:
+    """從 seat log 目錄掃出來、確認真的存在的紅隊席位名稱——跟 /blue-seats
+    對稱，seat_log_receiver.py 本來就在 tail red-*.cmd，順手記。攻擊拓樸
+    面板的左側來源格用這個當自己的真實計數，不再跟右側靶機格數綁死
+    （issue #21 後續討論）。"""
+    return store.list_known_red_seats()
+
+
 @app.get("/possible-breaches")
 def possible_breaches() -> list[dict[str, Any]]:
     """issue #21 的啟發式 pivot 偵測結果（breach_detector.py）——終端機
