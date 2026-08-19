@@ -111,7 +111,7 @@
      線連著。CSS Grid + grid-auto-flow:column：一欄最多 --patch-cols 個
      （見 renderBreachPanel 的 cellSizeForCount()，上限 8），直的往下疊，
      超過才往右開新欄——維持直排的形狀（面板本身窄而高），不是橫向排開。 */
-  .patch-grid { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--patch-cols, 8), auto); align-content: center; justify-content: center; gap: 10px 20px; }
+  .patch-grid { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--patch-cols, 8), auto); align-content: center; justify-content: center; gap: 8px 10px; }
   .patch-pair { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
   /* 格子尺寸由 --breach-cell-size 這個 CSS 變數控制（見 renderBreachPanel
      的 cellSizeForCount()）——靶機/來源數量少時格子大，數量一多就自動縮
@@ -174,7 +174,7 @@
      py（/possible-breaches）——中間的 .attack-beam 光束跟兩邊的
      .suspected 亮燈都是同一組疑似突破信號驅動，沒有疑似突破時維持未
      亮燈的骨架、光束不出現，不編造。 */
-  .breach-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .breach-view { flex: 1; min-height: 0; display: flex; align-items: flex-start; justify-content: center; gap: 10px; padding-top: 4px; }
   .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: center; }
   /* 紅隊來源格靠左放（不置中），跟右邊靶機格拉開視覺距離；.attack-beam
      是這兩欄中間真正的 flex 元件（不是絕對定位），紅隊靠左騰出的空間會
@@ -309,7 +309,7 @@
         <div class="attack-beam" id="attack-beam"><div class="pulse-dot"></div></div>
         <div class="clash-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
-      <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破</div>
+      <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破　外網 <span id="breach-count-external">0/0</span>　內網 <span id="breach-count-internal">0/0</span></div>
     </div>
 
     <div class="panel" style="box-shadow:var(--shadow-sm);">
@@ -580,6 +580,11 @@
     var suspectedExternal = showSuspected ? Math.min(externalCount, count) : 0;
     var suspectedInternal = showSuspected ? Math.min(internalCount, count) : 0;
     document.getElementById("breach-legend").hidden = !showSuspected;
+    // count 是目前畫出來的靶機格總數（分母），suspectedExternal／
+    // suspectedInternal 是被點亮的格數（分子）——跟格子本身點亮的數量
+    // 完全同一組數字，只是多印出來給人看精確值。
+    document.getElementById("breach-count-external").textContent = suspectedExternal + "/" + count;
+    document.getElementById("breach-count-internal").textContent = suspectedInternal + "/" + count;
     // 光束：呼應「紅隊打過去」的方向性，只在有疑似突破時出現。用 class
     // 切 opacity（見上面 CSS），不是從版面移除——光束的容器本來就是兩欄
     // 中間的 flex 元件，移除會讓兩欄在光束消失/出現時位置跳動。持續
