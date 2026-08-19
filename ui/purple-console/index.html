@@ -134,11 +134,11 @@
   .patch-cell-fill.suspected { opacity: 0.75; background: linear-gradient(135deg, #7a1414, #ff3b3b); box-shadow: 0 0 10px 2px rgba(255,59,59,0.5); animation: pulse 2s ease-in-out infinite; }
   /* 外網/內網實際數字——比下面純粹「有沒有疑似突破」的小字圖例顯眼，
      緊接在格子下面，是這個面板除了格子本身之外唯一的精確數字。 */
-  .breach-count-line { font-size: 17px; color: var(--color-neutral-300); text-align: center; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  .breach-count-line { font-size: 22px; color: var(--color-neutral-300); text-align: center; margin-top: 10px; font-variant-numeric: tabular-nums; }
   /* 純粹的圖例（點的顏色代表什麼），字級跟藍隊那邊的小字說明同一個
      量級，放在面板最下面，不搶格子跟上面數字的視覺重量。 */
-  .breach-legend { font-size: 12px; color: var(--color-neutral-600); text-align: center; margin-top: auto; padding-top: 8px; }
-  .breach-legend .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff3b3b; margin-right: 5px; vertical-align: middle; }
+  .breach-legend { font-size: 16px; color: var(--color-neutral-500); text-align: center; margin-top: auto; padding-top: 8px; }
+  .breach-legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ff3b3b; margin-right: 6px; vertical-align: middle; }
 
   /* 藍隊整體修補進度——大分數是**全隊平均**（所有回報中的席位 total_score
      取平均，不是單一席位），滿分同樣取所有席位 max_score 的平均（鎖定/
@@ -180,11 +180,11 @@
      .suspected 亮燈都是同一組疑似突破信號驅動，沒有疑似突破時維持未
      亮燈的骨架、光束不出現，不編造。 */
   .breach-view { flex: 1; min-height: 0; display: flex; align-items: flex-start; justify-content: center; gap: 10px; padding-top: 4px; }
-  .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: center; }
-  /* 紅隊來源格靠左放（不置中），跟右邊靶機格拉開視覺距離；.attack-beam
-     是這兩欄中間真正的 flex 元件（不是絕對定位），紅隊靠左騰出的空間會
-     自然被光束跟藍隊那欄吃掉，不用手動算光束該擺在哪個像素。 */
-  .clash-col-origin { justify-content: flex-start; }
+  /* 兩欄都靠自己這欄的左邊放，不置中——紅隊靠左邊界，藍隊靠中間（也就是
+     朝光束那側靠），兩邊都往中間偏，藍隊不會被推到面板右邊界外面。
+     .attack-beam 是這兩欄中間真正的 flex 元件（不是絕對定位），兩邊各自
+     騰出的空間會自然被光束跟對面那欄吃掉，不用手動算像素。 */
+  .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: flex-start; }
   /* 跟右邊 .patch-grid 同一種排法：CSS Grid + grid-auto-flow:column，
      一欄最多 --breach-cols 個（一樣上限 8），直的往下疊，超過才往右開
      新欄。格子尺寸是動態的（見 --breach-cell-size），靠固定像素高度換
@@ -310,7 +310,7 @@
       </div>
       <div class="panel-empty" id="red-empty">目前無對局中</div>
       <div class="breach-view" id="red-breach" hidden>
-        <div class="clash-col clash-col-origin"><div class="breach-grid" id="origin-grid"></div></div>
+        <div class="clash-col"><div class="breach-grid" id="origin-grid"></div></div>
         <div class="attack-beam" id="attack-beam"><div class="pulse-dot"></div></div>
         <div class="clash-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
