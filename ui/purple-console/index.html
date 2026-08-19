@@ -1016,10 +1016,16 @@
       document.getElementById("stat-updated").textContent = new Date().toLocaleTimeString("zh-TW", { hour12: false });
 
       renderTimeline(buildChain(correlations));
-      refreshBreachPanel(apiBase, correlations, hasData); // 獨立的 fetch（/possible-breaches），失敗不影響上面主要流程
       refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
       refreshBlueShell(apiBase); // 同上
-      refreshBlueProgress(apiBase); // 同上——合併衝突整理時漏掉這行，導致藍隊分數/拓樸格數都卡在空資料
+      // refreshBreachPanel 會讀 lastBlueScores／lastBlueSeatCount（藍隊
+      // 面板快取的資料）當拓樸格數的分母——這兩支都是 fire-and-forget
+      // 的話，refreshBreachPanel 讀到的常常是「上一輪」的舊快取，不是
+      // 這一輪剛抓到的，第一次載入時舊快取是初始值 0，就會退回保底的
+      // 6 格。改成先 await refreshBlueProgress 把快取更新完，再讓
+      // refreshBreachPanel 讀，才會是同一輪的最新資料。
+      await refreshBlueProgress(apiBase);
+      refreshBreachPanel(apiBase, correlations, hasData);
     } catch (err) {
       setStatus("err", "連線失敗");
       errorBanner.hidden = false;
