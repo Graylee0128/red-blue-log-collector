@@ -117,11 +117,12 @@
   .patch-cell-fill { position: absolute; inset: 0; background: linear-gradient(135deg, #1f4a70, #4da6ff); opacity: 0; transition: opacity 0.4s ease; }
   .patch-link { width: 20px; height: 3px; background: var(--color-neutral-700); flex-shrink: 0; }
 
-  /* 藍隊整體修補進度——大分數（現在／滿分 140，滿分是真實數字，來自
-     checker.py 7 關 20 分制，見 BLUE.pdf；現在的分數目前沒有真資料，
-     固定顯示「—」，不編造），下面一排格子，不分組。cell-done／
-     cell-active／cell-idle 三態備用，目前沒有真實的每項完成狀態，
-     一律畫成 cell-idle，不編造哪些已修好。 */
+  /* 藍隊整體修補進度——大分數（現在／滿分 140，來自 checker.py 7 關
+     20 分制，見 BLUE.pdf），下面一排格子，不分組。真資料見 issue #22
+     的 blue_score_receiver.py（/blue-scores），cell-done 是該關 pass，
+     cell-idle 是還沒過或隱藏題還沒解鎖（兩種情況故意畫成一樣，解鎖前
+     不能被外觀分辨出來，否則等於變相洩題）。cell-active 目前沒用到，
+     備用。抓不到資料（scoreEntry 是 null）時一律 cell-idle、分數「—」。 */
   .blue-progress { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
   .score-block { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; max-width: 280px; }
   .score-row { display: flex; align-items: baseline; gap: 12px; }
@@ -527,14 +528,23 @@
   }
 
   // 藍隊整體修補進度：固定 7 格（blue/scoring-engine 既有設計，vuln1-7，
-  // 滿分 140，見 BLUE.pdf），不分組、不分隱藏獎勵，同一排一起顯示。目前
-  // 沒有真實的每項完成狀態，一律 cell-idle，分數維持「—」，不編造。
+  // 滿分 140，見 BLUE.pdf），不分組、不分隱藏獎勵，同一排一起顯示。
   var BLUE_CHECK_COUNT = 7;
   var BLUE_MAX_SCORE = 140;
 
-  function renderBlueProgress() {
-    document.getElementById("blue-score").textContent = "—";
-    document.getElementById("blue-score-max").textContent = BLUE_MAX_SCORE;
+  // scoreEntry 是 /blue-scores 回傳的其中一筆（{total_score, max_score,
+  // checks}），null／undefined 代表還沒抓到資料，畫面退回「—」+ 全
+  // cell-idle 的靜止狀態。checks 陣列本身已經是後端 leak-filtered 過的
+  // （見 blue_score_receiver.py），隱藏題解鎖前只會拿到 5 筆，不足 7 格
+  // 的部分自然用 cell-idle 補滿，不用前端另外判斷要不要顯示隱藏題。
+  function renderBlueProgress(scoreEntry) {
+    var checks = (scoreEntry && scoreEntry.checks) || [];
+    document.getElementById("blue-score").textContent = scoreEntry ? scoreEntry.total_score : "—";
+    var max = (scoreEntry && scoreEntry.max_score) || BLUE_MAX_SCORE;
+    document.getElementById("blue-score-max").textContent = max;
+    document.getElementById("blue-score-fill").style.width =
+      scoreEntry ? Math.round((scoreEntry.total_score / max) * 100) + "%" : "0%";
+
     var host = document.getElementById("blue-cells");
     host.innerHTML = "";
     // 上三下四，不是平均分欄——7 格排成兩排比排成 3+3+1 三排更緊湊。
@@ -543,10 +553,26 @@
     rowSizes.forEach(function (size) {
       var row = el("div", "cell-row");
       for (var n = 0; n < size && i < BLUE_CHECK_COUNT; n++, i++) {
-        row.appendChild(el("div", "cell cell-idle"));
+        var passed = checks[i] && checks[i].status === "pass";
+        row.appendChild(el("div", "cell " + (passed ? "cell-done" : "cell-idle")));
       }
       host.appendChild(row);
     });
+  }
+
+  // /blue-scores 目前設計成單一目標顯示（見 blue_score_receiver.py 的
+  // docstring／issue #22）——多個藍隊席位時先取第一筆，不做跨席位加總
+  // （加總對「7 格代表哪一關」這種版面沒有意義）。抓不到就退回無資料
+  // 狀態，不編造分數。
+  async function refreshBlueProgress(apiBase) {
+    try {
+      var res = await fetch(apiBase + "/blue-scores");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var scores = await res.json();
+      renderBlueProgress(scores[0] || null);
+    } catch (err) {
+      renderBlueProgress(null);
+    }
   }
 
   // 困難模式的五個稽核方向，文字照 BLUE.pdf「查清：稽核覆蓋圖」原文。
@@ -742,6 +768,7 @@
       renderBreachPanel(correlations);
       refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
       refreshBlueShell(apiBase); // 同上
+      refreshBlueProgress(apiBase); // 同上
     } catch (err) {
       setStatus("err", "連線失敗");
       errorBanner.hidden = false;
@@ -765,7 +792,7 @@
   fitStage();
 
   renderBreachPanel([]);
-  renderBlueProgress();
+  renderBlueProgress(null);
   renderAuditCoverage();
   renderIdleBlueShell();
   document.getElementById("red-shell").appendChild(shellLine("#ff6b78", RED_PROMPT, null, null, caretEl("#ff6b78")));

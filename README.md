@@ -258,6 +258,27 @@ hand, not as a second real ingest format. Anything matching neither shape
 is logged as `unparsable syslog line, skipping` and dropped silently (no
 error back to the sender — TCP here has no application-level ack).
 
+## Blue score receiver
+
+Metis's blue-team scoring (`blue/scoring-engine/checker.py`, 7 vulnerability
+checks per seat, 5 formal + 2 hidden bonus, 20 pts each) has no API either —
+it writes a `leaderboard_<target>.json` snapshot to a host directory every
+time it re-checks. [`src/rbcollector/blue_score_receiver.py`](src/rbcollector/blue_score_receiver.py)
+polls that directory directly (same "read Metis's own files" pattern as the
+seat log receiver, issue #16), and applies the *same* leak filter
+`checker.py` itself uses before pushing scores into the guest's container:
+the 2 hidden bonus checks never surface via `GET /blue-scores` until all 5
+formal checks pass, so this API is safe to expose publicly.
+
+```bash
+docker compose up -d --build blue-score-receiver
+```
+
+`BLUE_SCORE_DIR` needs to point at wherever `checker.py`/`auto_watch.sh` is
+actually run from on the host — that isn't wired into Metis's own deploy
+scripts yet (see issue #22), so the default in `docker-compose.yml` is a
+placeholder, not a confirmed convention.
+
 ## Release
 
 Image version must match semantic versioning (semver). To publish a new version:

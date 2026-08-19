@@ -64,6 +64,26 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Issue #22：讀 blue/scoring-engine/checker.py 產生的 leaderboard_<target>.
+  # json（藍隊修補進度），一樣是「直接讀 Metis 自己的檔案」模式，不是 API。
+  # auto_watch.sh／checker.py 目前沒有被接進 Metis 的部署流程，會寫在誰手動
+  # 執行它的當下目錄——下面這個 host path 只是暫定值，還沒有標準化，部署
+  # 前務必跟實際跑 checker.py 的目錄對齊（見 issue #22 open questions）。
+  blue-score-receiver:
+    build: .
+    command: ["python", "-m", "rbcollector.blue_score_receiver"]
+    environment:
+      DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
+      BLUE_SCORE_DIR: "/var/lib/metis/blue-scores"
+      BLUE_SCORE_POLL_INTERVAL: "5"
+      LOG_LEVEL: "INFO"
+    volumes:
+      - /var/lib/metis/blue-scores:/var/lib/metis/blue-scores:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   # 紫隊 Grafana 介面：只接現有 collector Postgres（見 deploy/grafana/provisioning/
   # datasources/datasources.yaml），不含 cyber 那條 Loki/Prometheus log/metric pipeline。
   grafana:

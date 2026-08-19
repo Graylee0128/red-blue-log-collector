@@ -37,6 +37,17 @@ CREATE TABLE IF NOT EXISTS raw_events (
   payload JSONB NOT NULL,
   received_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- 藍隊修補進度（issue #22）：checker.py 的 leaderboard_<target>.json 快照，
+-- 一個 target 只留最新一筆（跟 admission_live_state 同樣的「快照不是事件
+-- 串流」設計），不是 normalized_events 那種可累積、可關聯的事件。
+CREATE TABLE IF NOT EXISTS blue_scores (
+  target TEXT PRIMARY KEY,
+  total_score INTEGER NOT NULL,
+  max_score INTEGER NOT NULL,
+  checks JSONB NOT NULL,
+  observed_at TIMESTAMPTZ NOT NULL,
+  recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
@@ -128,6 +139,43 @@ class EventStore:
                 "received_at": received_at.isoformat(),
             }
             for team, payload, received_at, row_observed_at in rows
+        ]
+
+    def upsert_blue_score(
+        self, *, target: str, total_score: int, max_score: int, checks: list[dict[str, Any]], observed_at: str
+    ) -> None:
+        """寫入/更新一個 target 的最新分數快照——同一個 target 只留最新一筆
+        （ON CONFLICT DO UPDATE），跟 normalized_events 的 append-only 不同。"""
+        with self._connect() as conn:
+            conn.execute(
+                """
+                INSERT INTO blue_scores (target, total_score, max_score, checks, observed_at)
+                VALUES (%s,%s,%s,%s,%s)
+                ON CONFLICT (target) DO UPDATE SET
+                  total_score = EXCLUDED.total_score,
+                  max_score = EXCLUDED.max_score,
+                  checks = EXCLUDED.checks,
+                  observed_at = EXCLUDED.observed_at,
+                  recorded_at = now()
+                """,
+                (target, total_score, max_score, Jsonb(checks), observed_at),
+            )
+            conn.commit()
+
+    def list_blue_scores(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT target, total_score, max_score, checks, observed_at FROM blue_scores ORDER BY target"
+            ).fetchall()
+        return [
+            {
+                "target": target,
+                "total_score": total_score,
+                "max_score": max_score,
+                "checks": checks,
+                "observed_at": observed_at.isoformat(),
+            }
+            for target, total_score, max_score, checks, observed_at in rows
         ]
 
     def list_events(self, team: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
