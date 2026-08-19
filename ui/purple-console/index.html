@@ -418,8 +418,15 @@
   // 沒有正確標記出這次攻擊，不分「完全沒紀錄」跟「有紀錄但沒告警」，都
   // 算「未被偵測」，不獨立成第四色。藍隊自己的修補進度是另一個完全獨立
   // 的面板（右側 patch-grid，CTF 式漏洞修補題），跟這條時間軸無關。
+  //
+  // issue #20 時間軸雜訊過濾：只顯示有 technique 標籤的事件（命中檢測規則）。
+  // 明顯垃圾（純數字、打字測試）已在 ingest 層過濾掉，不存進 normalized_events。
+  // 此層只過濾顯示，不影響 red_actions／detection_rate 統計。
   function buildChain(correlations) {
-    return correlations.slice().reverse().map(function (c) {
+    return correlations.slice().reverse().filter(function (c) {
+      // 只顯示有 technique 標籤的事件（即真實檢測到的攻擊）
+      return c.technique !== null && c.technique !== undefined;
+    }).map(function (c) {
       var fast = c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
       var slow = c.status === "hit" && !fast;
       var missed = c.status !== "hit";
