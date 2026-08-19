@@ -139,6 +139,11 @@
      issue #22 後續討論，使用者要求把單席位畫面換成全隊聚合）。 */
   .cell { width: 68px; height: 68px; border-radius: 10px; box-sizing: border-box; background: var(--color-neutral-800); position: relative; overflow: hidden; }
   .cell-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: linear-gradient(180deg, #22d3ee, #1a3a6b); transition: height 0.4s ease; }
+  /* 最後兩格（隱藏加分題，vuln6/vuln7）在還沒有任何一台席位過關前畫虛線
+     框，不填色、不疊字——跟前 5 格「即使 0 人過也是實心 + 0/N」不同，這
+     兩格在 0 人完成時代表「還不確定有沒有人碰得到這關」，用虛線跟「已知
+     0 人過」的實心區分開。一旦有人過，就退回跟其他格一樣的實心填色。 */
+  .cell-locked { background: transparent !important; border: 3px dashed var(--color-neutral-700); }
   /* 疊在填色上面的「幾台過了 / 總共幾台」計數，跟填色高度算的是同一組
      數字（passCount/total），只是填色給概觀、數字給精確值——text-shadow
      不是 background，蓋在填色上面深淺都看得清楚，不用另外判斷填色高度
@@ -569,6 +574,11 @@
       passCounts.push(scores.filter(function (s) { return s.checks[idx] && s.checks[idx].status === "pass"; }).length);
     }
 
+    // 最後兩格（隱藏加分題）0 人完成時是虛線、不填色、不疊字；一旦有人
+    // 過就變成一般格子，但疊字只顯示完成人數，不顯示分母（跟前 5 格的
+    // "X/N" 不同——這是使用者明確要求的呈現方式，不是遺漏）。
+    var HIDDEN_INDICES = [5, 6];
+
     var host = document.getElementById("blue-cells");
     host.innerHTML = "";
     // 上三下四，不是平均分欄——7 格排成兩排比排成 3+3+1 三排更緊湊。
@@ -577,17 +587,24 @@
     rowSizes.forEach(function (size) {
       var row = el("div", "cell-row");
       for (var n = 0; n < size && i < BLUE_CHECK_COUNT; n++, i++) {
+        var count = passCounts[i];
+        var isHidden = HIDDEN_INDICES.indexOf(i) !== -1;
+
+        if (isHidden && count === 0) {
+          row.appendChild(el("div", "cell cell-locked"));
+          continue;
+        }
+
         var cell = el("div", "cell");
         var fill = el("div", "cell-fill");
-        var ratio = hasData ? passCounts[i] / scores.length : 0;
+        var ratio = hasData ? count / scores.length : 0;
         fill.style.height = Math.round(ratio * 100) + "%";
         cell.appendChild(fill);
-        // 疊字：「幾台過了 / 總共幾台」，沒資料時不疊字（跟填色一樣維持
-        // 空白，不編造 0/0）。
+        // 沒資料時不疊字（跟填色一樣維持空白，不編造 0/0）。
         if (hasData) {
-          var count = el("div", "cell-count");
-          count.textContent = passCounts[i] + "/" + scores.length;
-          cell.appendChild(count);
+          var countEl = el("div", "cell-count");
+          countEl.textContent = isHidden ? String(count) : count + "/" + scores.length;
+          cell.appendChild(countEl);
         }
         row.appendChild(cell);
       }
