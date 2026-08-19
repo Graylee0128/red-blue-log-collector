@@ -186,6 +186,9 @@
      不佔版面（不會把兩欄擠窄）。 */
   .attack-beam { position: absolute; left: 50%; top: 50%; width: 70px; height: 0; transform: translate(-50%, -50%); pointer-events: none; }
   .attack-beam .pulse-dot { position: absolute; top: -4px; left: -10px; width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 12px 4px rgba(255,59,59,0.75); animation: beam-travel 1.3s ease-in-out infinite; }
+  /* 拖尾——子元素會跟著 .pulse-dot 的 left 動畫一起移動，不用另外算位置。
+     往移動方向的反方向（左邊）延伸、由圓點的顏色淡出到透明，做出流線感。 */
+  .attack-beam .pulse-dot::before { content: ""; position: absolute; top: 50%; right: 100%; transform: translateY(-50%); width: 28px; height: 3px; background: linear-gradient(90deg, transparent, #ff3b3b); border-radius: 3px; opacity: 0.7; }
   @keyframes beam-travel { 0% { left: -10px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
 
   .timeline-head { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; }
