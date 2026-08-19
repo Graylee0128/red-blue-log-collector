@@ -320,7 +320,8 @@
         <span class="panel-tag" style="color:#ff8f99;">RED</span>
         <span class="panel-sub">紅隊攻擊拓樸</span>
       </div>
-      <div class="panel-empty" id="red-empty">目前無對局中</div>
+      <div class="panel-empty" id="red-loading">載入中…</div>
+      <div class="panel-empty" id="red-empty" hidden>目前無對局中</div>
       <div class="breach-view" id="red-breach" hidden>
         <div class="clash-col clash-col-origin" id="origin-col"><div class="breach-grid" id="origin-grid"></div></div>
         <div class="attack-beam" id="attack-beam"><div class="pulse-dot"></div></div>
@@ -351,7 +352,8 @@
         <span class="panel-tag" style="color:#8ec6ff;">BLUE</span>
         <span class="panel-sub" id="blue-panel-title">藍隊整體修補進度</span>
       </div>
-      <div class="panel-empty" id="blue-empty">目前無對局中</div>
+      <div class="panel-empty" id="blue-loading">載入中…</div>
+      <div class="panel-empty" id="blue-empty" hidden>目前無對局中</div>
 
       <div class="blue-progress" id="blue-patch" hidden>
         <div class="score-block">
@@ -969,6 +971,12 @@
 
   function setPanelState(hasMatch) {
     lastHasMatch = hasMatch;
+    // 「載入中」只是第一次成功拿到 /analysis 回應之前的過渡狀態——這支
+    // 函式只會在 refresh() 成功拿到資料後才被呼叫，所以在這裡關掉就
+    // 保證只會關一次、關了不會再開，不用另外開一個 flag 追蹤「是不是
+    // 第一次載入」。
+    document.getElementById("red-loading").hidden = true;
+    document.getElementById("blue-loading").hidden = true;
     document.getElementById("red-empty").hidden = hasMatch;
     document.getElementById("red-breach").hidden = !hasMatch;
     document.getElementById("blue-empty").hidden = hasMatch;
