@@ -182,7 +182,7 @@
      py（/possible-breaches）——中間的 .attack-beam 光束跟兩邊的
      .suspected 亮燈都是同一組疑似突破信號驅動，沒有疑似突破時維持未
      亮燈的骨架、光束不出現，不編造。 */
-  .breach-view { flex: 1; min-height: 0; display: flex; align-items: flex-start; justify-content: center; gap: 10px; padding-top: 4px; }
+  .breach-view { flex: 1; min-height: 0; display: flex; align-items: flex-start; justify-content: center; gap: 6px; padding-top: 4px; }
   /* 兩欄都靠自己這欄的左邊放，不置中——紅隊靠左邊界，藍隊靠中間（也就是
      朝光束那側靠），兩邊都往中間偏，藍隊不會被推到面板右邊界外面。
      .attack-beam 是這兩欄中間真正的 flex 元件（不是絕對定位），兩邊各自
@@ -204,7 +204,7 @@
      子元素（不是絕對定位蓋在算好的中點），紅隊靠左之後光束的位置會跟著
      flex 排版自然調整，不用手動改座標；用 opacity 切換顯示/隱藏，而不是
      從版面移除，這樣光束出現/消失不會讓兩邊格子的位置跳動。 */
-  .attack-beam { position: relative; width: 70px; height: 20px; flex-shrink: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s ease; }
+  .attack-beam { position: relative; width: 24px; height: 20px; flex-shrink: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s ease; }
   .attack-beam.visible { opacity: 1; }
   .attack-beam .pulse-dot { position: absolute; top: 50%; left: -10px; margin-top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 12px 4px rgba(255,59,59,0.75); animation: beam-travel 1.3s ease-in-out infinite; }
   /* 拖尾——子元素會跟著 .pulse-dot 的 left 動畫一起移動，不用另外算位置。
@@ -554,7 +554,7 @@
   var ROW_GAP = 8;
   var COL_GAP = 10;
   var PAIR_WIDTH_RATIO = 2.45; // 一對＝兩顆格子＋一條連接線（見 .patch-link 的 calc(0.45)）
-  var ROWS_MAX = 5; // 一欄最多幾個——即使垂直空間夠塞更多，也不超過這個上限
+  var ROWS_MAX = 8; // 一欄最多幾個——即使垂直空間夠塞更多，也不超過這個上限
 
   function fitCellLayout(count) {
     var col = document.getElementById("target-col");
