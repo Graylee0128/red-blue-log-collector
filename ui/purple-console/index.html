@@ -108,18 +108,22 @@
   .panel-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--color-neutral-600); text-align: center; }
 
   /* 紅隊攻擊拓樸右側的靶機格——每個靶機一對方塊（外網／內網），用一條
-     線連著。flex-direction:column + flex-wrap:wrap 讓格數（跟不同
-     destination 數同步，見 renderBreachPanel）超過一欄能裝的高度時自動
-     換到下一欄，不用寫死總數對應幾欄。 */
-  .patch-grid { flex: 1; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: center; justify-content: center; gap: 10px 20px; }
+     線連著。改用 CSS Grid、固定 --patch-cols 欄（見 renderBreachPanel 的
+     cellSizeForCount()，最多 8 欄），超過就自動換到下一排——不是靠容器
+     高度換欄，是明確「一排最多幾個」。 */
+  .patch-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--patch-cols, 8), auto); align-content: center; justify-content: center; gap: 10px 20px; }
   .patch-pair { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
   /* 格子尺寸由 --breach-cell-size 這個 CSS 變數控制（見 renderBreachPanel
      的 cellSizeForCount()）——靶機/來源數量少時格子大，數量一多就自動縮
      小塞進同一塊面板，不用寫死。44px 是變數沒設定時（例如面板還沒渲染
-     過）的預設值，不是實際上限。 */
+     過）的預設值，不是實際上限。左邊來源格（.breach-cell）也吃同一個
+     變數，兩邊格子尺寸保證一致。 */
   .patch-cell { width: var(--breach-cell-size, 44px); height: var(--breach-cell-size, 44px); flex-shrink: 0; border-radius: 8px; background: var(--color-neutral-900); border: 1px solid var(--color-neutral-800); position: relative; overflow: hidden; transition: width 0.3s ease, height 0.3s ease; }
   .patch-cell-fill { position: absolute; inset: 0; background: linear-gradient(135deg, #1f4a70, #4da6ff); opacity: 0; transition: opacity 0.4s ease; }
-  .patch-link { width: 20px; height: 3px; background: var(--color-neutral-700); flex-shrink: 0; }
+  /* 連接外網/內網兩格的線——寬度跟著格子尺寸等比縮放，格子縮小時線也
+     跟著縮小，不然格子變小之後這條線相對變得過寬，把整排往外撐，中間
+     的攻擊光束反而被擠得不明顯。 */
+  .patch-link { width: calc(var(--breach-cell-size, 44px) * 0.45); height: 3px; background: var(--color-neutral-700); flex-shrink: 0; transition: width 0.3s ease; }
   /* 對局中的常駐藍燈——藍隊自己的主題色，代表「藍隊在場」，跟左邊紅隊
      來源格的 .active 是同一組邏輯（穩定不脈動）。就是這個元素原本預留
      的藍色漸層，只是把 opacity 從 0 打開，不是新顏色。 */
@@ -528,6 +532,7 @@
   var CELL_SIZE_MIN = 26;
   var CELL_SIZE_MAX_AT_COUNT = 3;  // <= 這個數量用最大格子
   var CELL_SIZE_MIN_AT_COUNT = 16; // >= 這個數量用最小格子
+  var PATCH_COLS_MAX = 8; // 靶機格一排最多幾對，超過自動換下一排
 
   function cellSizeForCount(count) {
     if (count <= CELL_SIZE_MAX_AT_COUNT) return CELL_SIZE_MAX;
@@ -553,7 +558,11 @@
 
     // --breach-cell-size 設在 .breach-view 上，origin-grid／target-grid
     // 兩邊的格子都靠 CSS 變數繼承拿到同一個尺寸，兩邊格子大小才會同步。
-    document.getElementById("red-breach").style.setProperty("--breach-cell-size", cellSizeForCount(count) + "px");
+    // --patch-cols 是靶機格一排最多幾個（上限 8），見 .patch-grid 的
+    // grid-template-columns。
+    var breachViewEl = document.getElementById("red-breach");
+    breachViewEl.style.setProperty("--breach-cell-size", cellSizeForCount(count) + "px");
+    breachViewEl.style.setProperty("--patch-cols", Math.min(count, PATCH_COLS_MAX));
 
     // 只有真的有對局資料（realCount > 0）才疊加疑似突破——沒有真實
     // correlation 資料時 count 是保底假數字，疊上去會誤導。
