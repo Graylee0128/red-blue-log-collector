@@ -145,8 +145,8 @@ def is_noise(command: str) -> bool:
 def ingest_seat_log_line(store: EventStore, team: str, filename: str, line: str) -> None:
     """Parse one seat log line and normalize + store it.
 
-    Like syslog_receiver.ingest_syslog_line, a single bad line is logged and
-    skipped rather than raising, to keep file monitoring resilient.
+    A single bad line is logged and skipped rather than raising, to keep
+    file monitoring resilient.
     """
     parsed = parse_command_line(line)
     if parsed is None:

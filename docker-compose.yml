@@ -28,23 +28,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Metis deploy/logship.sh 的 rsyslog TCP 收信端（架構 §十一）。Metis 端
-  # LOG_SINK 指到這裡。host 514 是特權 port，容器內不用 root/CAP_NET_BIND_SERVICE
-  # 也能收——對外綁 514、對內轉 5140，port 映射由 Docker daemon 處理，跟
-  # collector 用 8001:8000 同一招。
-  syslog-receiver:
-    build: .
-    command: ["python", "-m", "rbcollector.syslog_receiver"]
-    environment:
-      DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
-      SYSLOG_PORT: "5140"
-    ports:
-      - "514:5140"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
   # Issue #16: 直接讀 Metis seat log 檔案，迴避 rsyslog 的權限/role/buffering 問題。
   # 根據檔案名自動判斷 team（red-*.cmd / blue-{a,b}-*.cmd），避免 rsyslog 寫死 role
   # 的問題。需要 volume mount /var/log/metis/seat 且容器內使用者需要 adm 群組權限
