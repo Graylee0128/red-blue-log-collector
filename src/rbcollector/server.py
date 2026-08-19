@@ -72,6 +72,15 @@ def blue_scores() -> list[dict[str, Any]]:
     return store.list_blue_scores()
 
 
+@app.get("/possible-breaches")
+def possible_breaches() -> list[dict[str, Any]]:
+    """issue #21 的啟發式 pivot 偵測結果（breach_detector.py）——終端機
+    視窗標題出現不同主機名稱的推論，不是確認過的攻擊成功事件，前端顯示
+    時要標示成疑似/未確認，不能跟 hit/gap 那種權威判定混在一起。跟
+    /blue-scores 一樣公開讀，不需要 purple clearance。"""
+    return store.list_possible_breaches()
+
+
 @app.get("/timeline")
 def timeline(limit: int = Query(500, ge=1, le=5000)) -> list[dict[str, Any]]:
     return store.list_events(team=None, limit=limit)

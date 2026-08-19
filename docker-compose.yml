@@ -84,6 +84,24 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Issue #21：啟發式 pivot 偵測，tail red-*.out（跟 seat-log-receiver 同一
+  # 個目錄，同一份 volume mount，只是看不同副檔名）。純粹是推論，不是
+  # 確認過的攻擊成功事件，見 breach_detector.py 開頭 docstring 的限制說明。
+  breach-detector:
+    build: .
+    command: ["python", "-m", "rbcollector.breach_detector"]
+    environment:
+      DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
+      SEAT_LOG_DIR: "/var/log/metis/seat"
+      BREACH_POLL_INTERVAL: "10"
+      LOG_LEVEL: "INFO"
+    volumes:
+      - /var/log/metis/seat:/var/log/metis/seat:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   # 紫隊 Grafana 介面：只接現有 collector Postgres（見 deploy/grafana/provisioning/
   # datasources/datasources.yaml），不含 cyber 那條 Loki/Prometheus log/metric pipeline。
   grafana:

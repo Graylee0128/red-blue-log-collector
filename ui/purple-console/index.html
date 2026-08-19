@@ -116,6 +116,12 @@
   .patch-cell { width: 44px; height: 44px; flex-shrink: 0; border-radius: 8px; background: var(--color-neutral-900); border: 1px solid var(--color-neutral-800); position: relative; overflow: hidden; }
   .patch-cell-fill { position: absolute; inset: 0; background: linear-gradient(135deg, #1f4a70, #4da6ff); opacity: 0; transition: opacity 0.4s ease; }
   .patch-link { width: 20px; height: 3px; background: var(--color-neutral-700); flex-shrink: 0; }
+  /* 疑似突破（issue #21，breach_detector.py 的啟發式 pivot 偵測）——刻意
+     用琥珀色＋脈動，跟上面「確認過的攻擊成功」預留的藍色 patch-cell-fill
+     區分開，不能讓觀眾把推論當成權威判定。 */
+  .patch-cell-fill.suspected { opacity: 0.6; background: linear-gradient(135deg, #7a4a1f, #ffb84d); animation: pulse 2s ease-in-out infinite; }
+  .breach-legend { font-size: 13px; color: var(--color-neutral-500); text-align: center; margin-top: 4px; }
+  .breach-legend .dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; background: #ffb84d; margin-right: 6px; vertical-align: middle; }
 
   /* 藍隊整體修補進度——大分數是**全隊平均**（所有回報中的席位 total_score
      取平均，不是單一席位），滿分同樣取所有席位 max_score 的平均（鎖定/
@@ -267,6 +273,7 @@
         <div class="clash-col"><div class="breach-grid" id="origin-grid"></div></div>
         <div class="clash-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
+      <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破（終端機主機名稱偵測，未確認）</div>
     </div>
 
     <div class="panel" style="box-shadow:var(--shadow-sm);">
@@ -491,31 +498,64 @@
     return seen.size;
   }
 
-  function renderBreachPanel(correlations) {
-    var count = distinctDestinationCount(correlations || []) || BREACH_GRID_FALLBACK;
+  // suspectedCount：issue #21 breach_detector.py 偵測到的相異 target_host
+  // 數量（啟發式，見 /possible-breaches）。靶機格本身沒有名字對應（格子
+  // 純粹是「有幾台不同的靶機」的計數，不是特定哪一台），所以沒辦法精準
+  // 點亮「就是那一台」，只能點亮前 N 對——跟這個面板既有的「只給數量、
+  // 不給身份」設計一致，不是新的簡化。
+  function renderBreachPanel(correlations, suspectedCount) {
+    correlations = correlations || [];
+    suspectedCount = suspectedCount || 0;
+    var realCount = distinctDestinationCount(correlations);
+    var count = realCount || BREACH_GRID_FALLBACK;
     fillCellGrid("origin-grid", count);
+
+    // 只有真的有對局資料（realCount > 0）才疊加疑似突破——沒有真實
+    // correlation 資料時 count 是保底假數字，疊上去會誤導。
+    var showSuspected = realCount > 0 && suspectedCount > 0;
+    var suspectedPairs = showSuspected ? Math.min(suspectedCount, count) : 0;
+    document.getElementById("breach-legend").hidden = !showSuspected;
 
     // 每個靶機是一對方塊（外網／內網），跟藍隊修補格同一套元件。
     var targetHost = document.getElementById("target-grid");
     targetHost.innerHTML = "";
     for (var i = 0; i < count; i++) {
+      var suspected = i < suspectedPairs;
       var pair = el("div", "patch-pair");
-      pair.appendChild(patchCell());
+      pair.appendChild(patchCell(suspected));
       pair.appendChild(el("div", "patch-link"));
-      pair.appendChild(patchCell());
+      pair.appendChild(patchCell(suspected));
       targetHost.appendChild(pair);
     }
   }
 
   // 紅隊攻擊拓樸右側靶機格：每格代表一台靶機的其中一台機器（外網／
-  // 內網），亮度用 opacity 代表完成比例（0 = 全暗），目前沒有真實資料，
-  // 一律固定 opacity:0，不編造。
-  function patchCell() {
+  // 內網）。suspected=true 是 issue #21 的啟發式 pivot 偵測結果（琥珀色
+  // 脈動，見上面 CSS 的 .suspected 註解）——不是確認過的攻擊成功，沒有
+  // suspected 時維持 opacity:0 的空白狀態，不編造。
+  function patchCell(suspected) {
     var cell = el("div", "patch-cell");
-    var fill = el("div", "patch-cell-fill");
-    fill.style.opacity = "0";
+    var fill = el("div", "patch-cell-fill" + (suspected ? " suspected" : ""));
+    if (!suspected) fill.style.opacity = "0";
     cell.appendChild(fill);
     return cell;
+  }
+
+  // /possible-breaches 是 issue #21 breach_detector.py 的啟發式 pivot
+  // 偵測結果（{seat, target_host, observed_at} 清單）——算出相異
+  // target_host 數量餵給 renderBreachPanel 決定要點亮幾對靶機格。抓不到
+  // 就當作 0（沒有疑似突破），不影響上面主要的 correlations 畫面。
+  async function refreshBreachPanel(apiBase, correlations) {
+    try {
+      var res = await fetch(apiBase + "/possible-breaches");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var breaches = await res.json();
+      var targets = new Set();
+      breaches.forEach(function (b) { targets.add(b.target_host); });
+      renderBreachPanel(correlations, targets.size);
+    } catch (err) {
+      renderBreachPanel(correlations, 0);
+    }
   }
 
   // 藍隊整體修補進度：跟藍隊組長確認過的實際題目結構——簡單/普通是原本
@@ -790,7 +830,7 @@
       document.getElementById("stat-updated").textContent = new Date().toLocaleTimeString("zh-TW", { hour12: false });
 
       renderTimeline(buildChain(correlations));
-      renderBreachPanel(correlations);
+      refreshBreachPanel(apiBase, correlations); // 獨立的 fetch（/possible-breaches），失敗不影響上面主要流程
       refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
       refreshBlueShell(apiBase); // 同上
       refreshBlueProgress(apiBase); // 同上

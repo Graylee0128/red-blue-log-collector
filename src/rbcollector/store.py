@@ -48,6 +48,16 @@ CREATE TABLE IF NOT EXISTS blue_scores (
   observed_at TIMESTAMPTZ NOT NULL,
   recorded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+-- 疑似突破（issue #21）：breach_detector.py 的啟發式 pivot 偵測結果——
+-- 終端機視窗標題出現跟這個席位自己不同的 hostname，是推論不是確認過的
+-- 事實。同一個 (seat, target_host) 只留第一次看到的時間，冪等寫入。
+CREATE TABLE IF NOT EXISTS possible_breaches (
+  id BIGSERIAL PRIMARY KEY,
+  seat TEXT NOT NULL,
+  target_host TEXT NOT NULL,
+  observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  UNIQUE (seat, target_host)
+);
 """
 
 
@@ -176,6 +186,33 @@ class EventStore:
                 "observed_at": observed_at.isoformat(),
             }
             for target, total_score, max_score, checks, observed_at in rows
+        ]
+
+    def record_possible_breach(self, *, seat: str, target_host: str) -> bool:
+        """issue #21 的啟發式 pivot 偵測結果——同一個 (seat, target_host)
+        只留第一次看到的時間，重複呼叫是安全的冪等操作。回傳是不是新插入
+        （前端／呼叫端目前不需要，保留跟 append() 一致的回傳慣例）。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                """
+                INSERT INTO possible_breaches (seat, target_host)
+                VALUES (%s,%s)
+                ON CONFLICT (seat, target_host) DO NOTHING
+                RETURNING id
+                """,
+                (seat, target_host),
+            ).fetchone()
+            conn.commit()
+            return row is not None
+
+    def list_possible_breaches(self) -> list[dict[str, Any]]:
+        with self._connect() as conn:
+            rows = conn.execute(
+                "SELECT seat, target_host, observed_at FROM possible_breaches ORDER BY observed_at ASC"
+            ).fetchall()
+        return [
+            {"seat": seat, "target_host": target_host, "observed_at": observed_at.isoformat()}
+            for seat, target_host, observed_at in rows
         ]
 
     def list_events(self, team: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
