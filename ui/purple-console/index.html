@@ -134,10 +134,14 @@
   .score-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #1f4a70, #4da6ff); }
   .cell-grid { display: flex; flex-direction: column; align-items: center; gap: 16px; }
   .cell-row { display: flex; gap: 16px; }
-  .cell { width: 68px; height: 68px; border-radius: 10px; }
+  .cell { width: 68px; height: 68px; border-radius: 10px; box-sizing: border-box; }
   .cell-idle { background: var(--color-neutral-800); }
   .cell-done { background: linear-gradient(135deg, #22d3ee, #22d3ee); }
   .cell-active { background: linear-gradient(90deg, #1a3a6b, #22d3ee); }
+  /* checks 陣列還沒補滿 7 格的 padding 格（鎖定中的隱藏題，或還沒抓到
+     資料）——只畫虛線框、不填色，跟真的「已檢查但 fail」（cell-idle 實
+     心）區分開，不代表已經知道那格會是什麼結果。 */
+  .cell-locked { background: transparent; border: 1.5px dashed var(--color-neutral-700); }
 
   /* 困難模式：稽核覆蓋率（見 BLUE.pdf「查清：稽核覆蓋圖」）——五個稽核
      方向，查過哪塊就從暗變亮，不給對錯只給覆蓋率。目前沒有真實的
@@ -534,9 +538,11 @@
 
   // scoreEntry 是 /blue-scores 回傳的其中一筆（{total_score, max_score,
   // checks}），null／undefined 代表還沒抓到資料，畫面退回「—」+ 全
-  // cell-idle 的靜止狀態。checks 陣列本身已經是後端 leak-filtered 過的
-  // （見 blue_score_receiver.py），隱藏題解鎖前只會拿到 5 筆，不足 7 格
-  // 的部分自然用 cell-idle 補滿，不用前端另外判斷要不要顯示隱藏題。
+  // cell-locked 的靜止狀態。checks 陣列本身已經是後端 leak-filtered 過的
+  // （見 blue_score_receiver.py），隱藏題解鎖前只會拿到 5 筆——不足 7 格
+  // 的部分（i >= checks.length）畫成虛線框 cell-locked，跟「已經檢查過、
+  // 結果是 fail」的實心 cell-idle 區分開：這格目前還不知道會是什麼結果
+  // （可能是還沒解鎖的隱藏題，也可能單純還沒抓到資料），不是已知的失敗。
   function renderBlueProgress(scoreEntry) {
     var checks = (scoreEntry && scoreEntry.checks) || [];
     document.getElementById("blue-score").textContent = scoreEntry ? scoreEntry.total_score : "—";
@@ -553,8 +559,9 @@
     rowSizes.forEach(function (size) {
       var row = el("div", "cell-row");
       for (var n = 0; n < size && i < BLUE_CHECK_COUNT; n++, i++) {
-        var passed = checks[i] && checks[i].status === "pass";
-        row.appendChild(el("div", "cell " + (passed ? "cell-done" : "cell-idle")));
+        var cls = "cell-locked";
+        if (checks[i]) cls = checks[i].status === "pass" ? "cell-done" : "cell-idle";
+        row.appendChild(el("div", "cell " + cls));
       }
       host.appendChild(row);
     });
