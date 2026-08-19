@@ -101,12 +101,16 @@
   /* 明細卡片——position:relative 掛在被點的 tile 本身上，absolute 定位
      用的是父層 padding box，不受 .stage 的 transform:scale 影響，不用
      另外算縮放係數。z-index 蓋過下面的 board-row 面板。 */
-  .tile-popup { position: absolute; top: calc(100% + 8px); left: 0; z-index: 20; min-width: 220px; max-width: 320px; max-height: 260px; overflow-y: auto; background: var(--color-neutral-900); border: 1px solid var(--color-divider); border-radius: 8px; box-shadow: 0 12px 28px rgba(0,0,0,0.45); padding: 6px; cursor: default; }
-  .tile-popup, .tile-popup * { white-space: normal; }
+  .tile-popup { position: absolute; top: calc(100% + 8px); left: 0; z-index: 20; min-width: 280px; max-width: 440px; max-height: 320px; overflow-y: auto; background: var(--color-neutral-900); border: 1px solid var(--color-divider); border-radius: 8px; box-shadow: 0 12px 28px rgba(0,0,0,0.45); padding: 6px; cursor: default; }
   .tile-popup .popup-title { font-size: 14px; color: var(--color-neutral-500); padding: 4px 8px 8px; border-bottom: 1px solid var(--color-divider); margin-bottom: 4px; }
   .tile-popup .popup-row { display: flex; gap: 10px; padding: 5px 8px; font-size: 15px; white-space: nowrap; }
   .tile-popup .popup-row .time { font-family: 'JetBrains Mono', ui-monospace, monospace; color: var(--color-neutral-500); flex-shrink: 0; }
-  .tile-popup .popup-row .type { overflow: hidden; text-overflow: ellipsis; }
+  .tile-popup .popup-row .type { flex: 1 1 auto; overflow: hidden; text-overflow: ellipsis; }
+  /* 「未偵測」列（只有「偵測」tile 的完整清單才會出現）整行壓暗，狀態
+     字樣靠右，跟時間軸「未被偵測」的紅色調呼應但不搶眼——這裡只是明細
+     清單，不是主要視覺焦點。 */
+  .tile-popup .popup-row.popup-missed { color: var(--color-neutral-600); }
+  .tile-popup .popup-row .status { flex-shrink: 0; font-size: 13px; color: #ff9aa4; }
   .tile-popup .popup-empty { padding: 8px; font-size: 14px; color: var(--color-neutral-500); }
   .tile-popup { scrollbar-width: thin; scrollbar-color: var(--color-neutral-700) transparent; }
   .tile-popup::-webkit-scrollbar { width: 8px; }
@@ -242,11 +246,15 @@
   .timeline-title { font-size: 15px; letter-spacing: 0.1em; color: var(--color-neutral-500); white-space: nowrap; flex-shrink: 0; }
   .timeline-legend { margin-left: auto; display: flex; flex-wrap: nowrap; gap: 14px; font-size: 13px; color: var(--color-neutral-400); }
   .timeline-legend span { display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
-  .timeline-cols { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 8px 14px; align-items: center; font-size: 20px; color: var(--color-neutral-600); }
-  /* padding-top 給第一列的危險度亮框（.who.severity-high 的 box-shadow）
-     留暈染空間——overflow:auto 會直接裁掉伸出容器邊界的視覺效果，沒有
-     這點留白，第一列的光暈上緣會被切平。 */
-  .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; padding-top: 8px; }
+  /* sticky 貼在 #timeline-rows 頂端（跟資料列同一個捲動容器，見 HTML
+     端註解）——position:sticky 用的 top:0 是相對這個容器的 padding box，
+     background 要跟面板底色一樣不透明，不然捲動時資料列會從表頭底下
+     透出來。margin-bottom 取代原本 .timeline-rows 的 padding-top：一樣
+     是給第一列危險度亮框的 box-shadow 留暈染空間，只是位置從「整個
+     容器最上緣」改成「表頭跟第一列之間」，因為現在表頭本身也在容器
+     內部、不能再共用同一段 padding。 */
+  .timeline-cols { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 8px 14px; align-items: center; font-size: 20px; color: var(--color-neutral-600); padding: 0 8px; position: sticky; top: 0; z-index: 2; background: var(--color-surface); margin-bottom: 8px; }
+  .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
   /* 深色主題滾輪，取代瀏覽器預設的亮色滾輪（含上下箭頭按鈕），跟整頁色調
      一致——Firefox 用 scrollbar-width/scrollbar-color，Chromium 系（含投影
      用的瀏覽器多半是這類）用 ::-webkit-scrollbar。.stage-wrap 是外層容器，
@@ -357,10 +365,17 @@
           <span><span style="width:16px; height:0; border-top:2px dashed #ff4d5e;"></span>未被偵測</span>
         </div>
       </div>
-      <div class="timeline-cols">
-        <span style="text-align:center;">時間</span><span style="color:#ff8f99; text-align:center;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff; text-align:center;">藍隊事件</span><span style="text-align:right;">延遲</span>
+      <!-- 表頭故意搬進 #timeline-rows 內部（跟資料列同一個 overflow:auto
+           容器），不是外面獨立一塊——之前表頭跟資料列分屬兩個容器，資料
+           列有捲軸吃掉一截寬度、表頭沒有，兩邊 grid 實際內容寬度就是會
+           對不齊，怎麼調 padding 都只能碰運氣猜捲軸寬度。現在同一個容器、
+           同一份捲軸，寬度保證逐像素一致；用 position:sticky 讓表頭捲動
+           時留在最上面，renderTimeline() 只清除 .t-row，不動這個表頭。 -->
+      <div class="timeline-rows" id="timeline-rows">
+        <div class="timeline-cols">
+          <span style="text-align:center;">時間</span><span style="color:#ff8f99; text-align:center;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff; text-align:center;">藍隊事件</span><span style="text-align:right;">延遲</span>
+        </div>
       </div>
-      <div class="timeline-rows" id="timeline-rows"></div>
     </div>
 
     <div class="panel" style="box-shadow:0 0 0 1px #1f3450;">
@@ -498,14 +513,17 @@
   // 不用 technique 過濾——technique 只是 11 條規則的標籤，沒命中規則
   // 但確實被偵測到的攻擊會被誤隱。
   //
-  // issue #29 item 1：這裡的過濾結果同時也是「動作」統計 tile 的口徑
-  // （見 refresh() 裡直接用 chain.length，不再用伺服器端的 red_actions），
-  // 時間軸顯示筆數跟頂欄數字保證一致，不會分開算到分岔。
-  function buildChain(correlations) {
-    return correlations.slice().reverse().filter(function (c) {
-      // 只顯示真實檢測到的攻擊（status === "hit"）
-      return c.status === "hit";
-    }).map(function (c) {
+  // issue #29 item 1：buildChain() 的過濾結果同時也是「動作」統計 tile
+  // 的口徑（見 refresh() 裡直接用 chain.length，不再用伺服器端的
+  // red_actions），時間軸顯示筆數跟頂欄數字保證一致，不會分開算到分岔。
+  //
+  // buildAllActions() 是不過濾的完整版本（含未被偵測的），「偵測」tile
+  // 的明細卡片要用——顯示的數字是「X / Y」比例，點開理應看得到完整的
+  // Y 筆、每筆標出有沒有被偵測到，不能只給時間軸看得到的那 X 筆
+  // （buildChain 過濾掉的部分）。兩個函式共用同一份逐筆計算邏輯，避免
+  // 兩處欄位算法分開維護後兜不起來。
+  function buildAllActions(correlations) {
+    return correlations.slice().reverse().map(function (c) {
       var fast = c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
       var slow = c.status === "hit" && !fast;
       var missed = c.status !== "hit";
@@ -521,6 +539,15 @@
         severityHigh: c.severity === "high",
         latency: fmtLatency(c.latency_ms)
       };
+    });
+  }
+
+  function buildChain(correlations) {
+    // issue #20 時間軸雜訊過濾：只顯示有真實檢測結果的事件（!missed）。
+    // 不用 technique 過濾——technique 只是 11 條規則的標籤，沒命中規則
+    // 但確實被偵測到的攻擊會被誤隱。
+    return buildAllActions(correlations).filter(function (item) {
+      return !item.missed;
     });
   }
 
@@ -547,7 +574,10 @@
 
   function renderTimeline(chain) {
     var host = document.getElementById("timeline-rows");
-    host.innerHTML = "";
+    // 只清資料列，不能再用 host.innerHTML = ""——表頭（.timeline-cols）
+    // 現在是這個容器的第一個子元素（sticky header，見 HTML/CSS 端註解），
+    // 整個清空會連表頭一起砍掉。
+    host.querySelectorAll(".t-row").forEach(function (row) { row.remove(); });
     chain.forEach(function (item) {
       var row = el("div", "t-row");
       row.appendChild(el("span", "time", item.time));
@@ -576,13 +606,22 @@
   // 「偵測」目前口徑相同（都是 buildChain 過濾後的 hit 清單，見 item 1
   // 的註解），共用同一份清單；「快速偵測」是其中 latency < 30 秒的子集。
   var lastChain = [];
+  var lastAllActions = [];
   var openTileMetric = null;
 
   var METRIC_TITLES = { actions: "動作", detected: "偵測", fast: "快速偵測" };
 
+  // 「偵測」tile 顯示的是「X / Y」比例（見 refresh()），明細要對得起這個
+  // 分數——用 lastAllActions（buildAllActions() 的完整版本，含未被偵測
+  // 的），不能只給 lastChain（時間軸看得到的那 X 筆）。「動作」跟「快速
+  // 偵測」則要跟畫面上其他地方（時間軸、tile 數字本身）口徑一致，維持
+  // 只看 lastChain。
   function metricList(metric) {
     if (metric === "fast") {
       return lastChain.filter(function (item) { return item.fast; });
+    }
+    if (metric === "detected") {
+      return lastAllActions;
     }
     return lastChain;
   }
@@ -601,7 +640,7 @@
       popup.appendChild(el("div", "popup-empty", "目前沒有資料"));
     } else {
       items.forEach(function (item) {
-        var row = el("div", "popup-row");
+        var row = el("div", "popup-row" + (item.missed ? " popup-missed" : ""));
         var t = document.createElement("span");
         t.className = "time";
         t.textContent = item.time;
@@ -610,6 +649,15 @@
         ty.className = "type";
         ty.textContent = item.redLabel;
         row.appendChild(ty);
+        // 「偵測」明細（lastAllActions）才會混到未被偵測的項目，補一個
+        // 狀態字樣——「動作」「快速偵測」的清單本來就已經全部是命中的，
+        // item.missed 一定是 false，不會多出這個標籤。
+        if (item.missed) {
+          var st = document.createElement("span");
+          st.className = "status";
+          st.textContent = "未偵測";
+          row.appendChild(st);
+        }
         popup.appendChild(row);
       });
     }
@@ -1114,6 +1162,7 @@
       // 共用同一份 chain 從根本上避免對不上。
       var chain = buildChain(correlations);
       lastChain = chain; // 給 tile 明細卡片（issue #29 item 2）用，同一份資料，不重打 API
+      lastAllActions = buildAllActions(correlations); // 給「偵測」明細用，含未被偵測的完整版本
       document.getElementById("stat-actions").textContent = chain.length;
       document.getElementById("stat-detected").textContent = hasData ? (data.detected + " / " + data.red_actions) : "—";
       document.getElementById("stat-fast").textContent = chain.filter(function (item) {
