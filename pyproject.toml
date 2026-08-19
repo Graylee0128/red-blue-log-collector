@@ -1,6 +1,6 @@
 [project]
 name = "red-blue-log-collector"
-version = "0.2.0"
+version = "0.1.0"
 description = "Standalone Red/Blue telemetry collector extracted from the cyber Purple receiver patterns"
 requires-python = ">=3.12"
 dependencies = [
