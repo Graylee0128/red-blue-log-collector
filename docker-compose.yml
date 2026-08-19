@@ -45,25 +45,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # Issue #16: 直接讀 Metis seat log 檔案，迴避 rsyslog 的權限/role/buffering 問題。
-  # 根據檔案名自動判斷 team（red-*.cmd / blue-{a,b}-*.cmd），避免 rsyslog 寫死 role
-  # 的問題。需要 volume mount /var/log/metis/seat 且容器內使用者需要 adm 群組權限
-  # 或等效的讀取存取。
-  seat-log-receiver:
-    build: .
-    command: ["python", "-m", "rbcollector.seat_log_receiver"]
-    environment:
-      DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
-      SEAT_LOG_DIR: "/var/log/metis/seat"
-      SEAT_LOG_POLL_INTERVAL: "1"
-      LOG_LEVEL: "INFO"
-    volumes:
-      - /var/log/metis/seat:/var/log/metis/seat:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
   # 紫隊 Grafana 介面：只接現有 collector Postgres（見 deploy/grafana/provisioning/
   # datasources/datasources.yaml），不含 cyber 那條 Loki/Prometheus log/metric pipeline。
   grafana:
