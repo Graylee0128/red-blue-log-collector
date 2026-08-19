@@ -554,6 +554,7 @@
   var ROW_GAP = 8;
   var COL_GAP = 10;
   var PAIR_WIDTH_RATIO = 2.45; // 一對＝兩顆格子＋一條連接線（見 .patch-link 的 calc(0.45)）
+  var ROWS_MAX = 5; // 一欄最多幾個——即使垂直空間夠塞更多，也不超過這個上限
 
   function fitCellLayout(count) {
     var col = document.getElementById("target-col");
@@ -561,14 +562,14 @@
     var availH = col.clientHeight || 300;
 
     for (var size = CELL_SIZE_MAX; size >= CELL_SIZE_MIN; size -= 2) {
-      var rows = Math.max(1, Math.floor((availH + ROW_GAP) / (size + ROW_GAP)));
+      var rows = Math.min(ROWS_MAX, Math.max(1, Math.floor((availH + ROW_GAP) / (size + ROW_GAP))));
       var cols = Math.ceil(count / rows);
       var neededW = cols * (size * PAIR_WIDTH_RATIO) + (cols - 1) * COL_GAP;
       if (neededW <= availW) return { size: size, rows: rows };
     }
     // 極端情況：就算用最小格子也塞不下（台數多到誇張），格子維持最小值，
     // 不再繼續縮，寧可視覺擠一點也不要格子小到看不見。
-    var minRows = Math.max(1, Math.floor((availH + ROW_GAP) / (CELL_SIZE_MIN + ROW_GAP)));
+    var minRows = Math.min(ROWS_MAX, Math.max(1, Math.floor((availH + ROW_GAP) / (CELL_SIZE_MIN + ROW_GAP))));
     return { size: CELL_SIZE_MIN, rows: minRows };
   }
 
