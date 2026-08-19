@@ -108,10 +108,10 @@
   .panel-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--color-neutral-600); text-align: center; }
 
   /* 紅隊攻擊拓樸右側的靶機格——每個靶機一對方塊（外網／內網），用一條
-     線連著。改用 CSS Grid、固定 --patch-cols 欄（見 renderBreachPanel 的
-     cellSizeForCount()，最多 8 欄），超過就自動換到下一排——不是靠容器
-     高度換欄，是明確「一排最多幾個」。 */
-  .patch-grid { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(var(--patch-cols, 8), auto); align-content: center; justify-content: center; gap: 10px 20px; }
+     線連著。CSS Grid + grid-auto-flow:column：一欄最多 --patch-cols 個
+     （見 renderBreachPanel 的 cellSizeForCount()，上限 8），直的往下疊，
+     超過才往右開新欄——維持直排的形狀（面板本身窄而高），不是橫向排開。 */
+  .patch-grid { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--patch-cols, 8), auto); align-content: center; justify-content: center; gap: 10px 20px; }
   .patch-pair { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
   /* 格子尺寸由 --breach-cell-size 這個 CSS 變數控制（見 renderBreachPanel
      的 cellSizeForCount()）——靶機/來源數量少時格子大，數量一多就自動縮
@@ -176,11 +176,12 @@
      亮燈的骨架、光束不出現，不編造。 */
   .breach-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px; position: relative; }
   .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: center; }
-  /* 跟右邊 .patch-grid 同一種排法：CSS Grid、固定欄數（--breach-cols，
-     一樣上限 8），超過自動換下一排。格子尺寸是動態的（見
-     --breach-cell-size），靠固定像素高度換欄的舊算法（max-height）在
-     格子縮小後會跟右邊對不齊，改成跟右邊同一套邏輯才會維持同一種形狀。 */
-  .breach-grid { display: grid; grid-template-columns: repeat(var(--breach-cols, 8), auto); align-content: center; justify-content: center; align-self: center; gap: 8px; }
+  /* 跟右邊 .patch-grid 同一種排法：CSS Grid + grid-auto-flow:column，
+     一欄最多 --breach-cols 個（一樣上限 8），直的往下疊，超過才往右開
+     新欄。格子尺寸是動態的（見 --breach-cell-size），靠固定像素高度換
+     欄的舊算法（max-height）在格子縮小後會跟右邊對不齊，改成跟右邊
+     同一套邏輯才會維持同一種直排形狀。 */
+  .breach-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--breach-cols, 8), auto); align-content: center; justify-content: center; align-self: center; gap: 8px; }
   .breach-cell { width: var(--breach-cell-size, 44px); height: var(--breach-cell-size, 44px); flex-shrink: 0; border-radius: 6px; background: var(--color-neutral-900); border: 1px solid #5c2530; transition: background 0.4s ease, border-color 0.4s ease, width 0.3s ease, height 0.3s ease; }
   /* 對局中（不管有沒有疑似突破）全部常駐紅燈，代表「紅隊在場」——紅隊
      自己的主題色，穩定不脈動（脈動保留給紅色的警示語意，這裡只是
@@ -533,7 +534,7 @@
   var CELL_SIZE_MIN = 26;
   var CELL_SIZE_MAX_AT_COUNT = 3;  // <= 這個數量用最大格子
   var CELL_SIZE_MIN_AT_COUNT = 16; // >= 這個數量用最小格子
-  var PATCH_COLS_MAX = 8; // 靶機格一排最多幾對，超過自動換下一排
+  var PATCH_COLS_MAX = 8; // 一欄最多幾個（直排），超過往右開新欄
 
   function cellSizeForCount(count) {
     if (count <= CELL_SIZE_MAX_AT_COUNT) return CELL_SIZE_MAX;
