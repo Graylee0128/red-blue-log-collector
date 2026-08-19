@@ -2,6 +2,7 @@ from rbcollector.seat_log_receiver import (
     blue_payload_from_seat_log,
     get_team_from_filename,
     ingest_seat_log_line,
+    is_noise,
     parse_command_line,
     red_payload_from_seat_log,
 )
@@ -83,3 +84,43 @@ def test_ingest_seat_log_line_blank_line_does_not_append():
     store = FakeStore()
     ingest_seat_log_line(store, "red", "red-01.cmd", "\n")
     assert store.appended == []
+
+
+def test_is_noise_pure_digits():
+    assert is_noise("123456") is True
+    assert is_noise("0") is True
+
+
+def test_is_noise_repeated_character():
+    assert is_noise("aaaa") is True
+    assert is_noise("1111") is True
+    assert is_noise("----") is True
+    # 兩個字元不算雜訊（可能是有效的縮寫）
+    assert is_noise("aa") is False
+
+
+def test_is_noise_repeated_with_spaces():
+    assert is_noise("a a a") is True
+    assert is_noise("1 1 1") is True
+
+
+def test_is_noise_real_commands_pass():
+    assert is_noise("nmap -sV 10.0.0.20") is False
+    assert is_noise("ls -la") is False
+    assert is_noise("cd /tmp") is False
+    assert is_noise("sqlmap -u 'http://...'") is False
+
+
+def test_ingest_seat_log_line_filters_noise():
+    store = FakeStore()
+    ingest_seat_log_line(store, "red", "red-01.cmd", "123456")
+    assert store.appended == []
+
+    ingest_seat_log_line(store, "red", "red-01.cmd", "aaaa")
+    assert store.appended == []
+
+
+def test_ingest_seat_log_line_preserves_real_commands():
+    store = FakeStore()
+    ingest_seat_log_line(store, "red", "red-01.cmd", "nmap -sV 10.0.0.20")
+    assert len(store.appended) == 1
