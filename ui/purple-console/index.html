@@ -562,23 +562,23 @@
   var ROW_GAP = 8;
   var COL_GAP = 10;
   var PAIR_WIDTH_RATIO = 2.45; // 一對＝兩顆格子＋一條連接線（見 .patch-link 的 calc(0.45)）
-  var ROWS_MAX = 8; // 一欄最多幾個——即使垂直空間夠塞更多，也不超過這個上限
+  var FIXED_ROWS = 2; // 固定兩排，不隨數量/空間變動——欄數＝ceil(count/2)，機器數平分到每欄
 
   function fitCellLayout(count) {
     var col = document.getElementById("target-col");
     var availW = col.clientWidth || 140;
     var availH = col.clientHeight || 300;
+    var rows = FIXED_ROWS;
+    var cols = Math.ceil(count / rows);
 
     for (var size = CELL_SIZE_MAX; size >= CELL_SIZE_MIN; size -= 2) {
-      var rows = Math.min(ROWS_MAX, Math.max(1, Math.floor((availH + ROW_GAP) / (size + ROW_GAP))));
-      var cols = Math.ceil(count / rows);
       var neededW = cols * (size * PAIR_WIDTH_RATIO) + (cols - 1) * COL_GAP;
-      if (neededW <= availW) return { size: size, rows: rows };
+      var neededH = rows * size + (rows - 1) * ROW_GAP;
+      if (neededW <= availW && neededH <= availH) return { size: size, rows: rows };
     }
-    // 極端情況：就算用最小格子也塞不下（台數多到誇張），格子維持最小值，
-    // 不再繼續縮，寧可視覺擠一點也不要格子小到看不見。
-    var minRows = Math.min(ROWS_MAX, Math.max(1, Math.floor((availH + ROW_GAP) / (CELL_SIZE_MIN + ROW_GAP))));
-    return { size: CELL_SIZE_MIN, rows: minRows };
+    // 極端情況：就算用最小格子橫向也塞不下（台數多到誇張），格子維持
+    // 最小值，排數仍然固定兩排，不再繼續縮。
+    return { size: CELL_SIZE_MIN, rows: rows };
   }
 
   // externalCount／internalCount：issue #21 breach_detector.py 依 pivot
