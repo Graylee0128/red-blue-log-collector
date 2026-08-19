@@ -117,44 +117,38 @@
   .patch-cell-fill { position: absolute; inset: 0; background: linear-gradient(135deg, #1f4a70, #4da6ff); opacity: 0; transition: opacity 0.4s ease; }
   .patch-link { width: 20px; height: 3px; background: var(--color-neutral-700); flex-shrink: 0; }
 
-  /* 藍隊整體修補進度——大分數（現在／滿分 140，來自 checker.py 7 關
-     20 分制，見 BLUE.pdf），下面一排格子，不分組。真資料見 issue #22
-     的 blue_score_receiver.py（/blue-scores），cell-done 是該關 pass，
-     cell-idle 是還沒過或隱藏題還沒解鎖（兩種情況故意畫成一樣，解鎖前
-     不能被外觀分辨出來，否則等於變相洩題）。cell-active 目前沒用到，
-     備用。抓不到資料（scoreEntry 是 null）時一律 cell-idle、分數「—」。 */
+  /* 藍隊整體修補進度——大分數是**全隊平均**（所有回報中的席位 total_score
+     取平均，不是單一席位），滿分同樣取所有席位 max_score 的平均（鎖定/
+     解鎖隱藏題時每個席位的 max_score 本來就會不同，100 或 140，平均起來
+     才不會在只有部分席位解鎖時失真）。這面板刻意設計成完全不用人工操作
+     （不能點、不能切換席位）——多席位時只看得到「全隊」這一個數字，看
+     不到個別席位，見 issue #22 的後續討論。真資料見 blue_score_receiver.
+     py（/blue-scores 回傳的是「每個席位」清單，平均在前端算）。 */
   .blue-progress { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
   .score-block { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; max-width: 280px; }
   .score-row { display: flex; align-items: baseline; gap: 12px; }
   .score-val { font-size: 76px; font-weight: 600; line-height: 1; color: var(--color-text); font-variant-numeric: tabular-nums; }
   .score-max { font-size: 30px; color: var(--color-neutral-500); }
-  /* 分數軌道——目前沒有真資料，固定 0% 寬，只是讓面板不要看起來太空，
-     不是編造進度。 */
   .score-track { width: 100%; height: 10px; border-radius: 999px; background: var(--color-neutral-800); overflow: hidden; }
-  .score-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #1f4a70, #4da6ff); }
+  .score-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #1f4a70, #4da6ff); transition: width 0.4s ease; }
   .cell-grid { display: flex; flex-direction: column; align-items: center; gap: 16px; }
   .cell-row { display: flex; gap: 16px; }
-  .cell { width: 68px; height: 68px; border-radius: 10px; box-sizing: border-box; }
-  .cell-idle { background: var(--color-neutral-800); }
-  .cell-done { background: linear-gradient(135deg, #22d3ee, #22d3ee); }
-  .cell-active { background: linear-gradient(90deg, #1a3a6b, #22d3ee); }
-  /* checks 陣列還沒補滿 7 格的 padding 格（鎖定中的隱藏題，或還沒抓到
-     資料）——只畫虛線框、不填色，跟真的「已檢查但 fail」（cell-idle 實
-     心）區分開，不代表已經知道那格會是什麼結果。 */
-  .cell-locked { background: transparent; border: 3px dashed var(--color-neutral-700); }
-
-  /* 困難模式：稽核覆蓋率（見 BLUE.pdf「查清：稽核覆蓋圖」）——五個稽核
-     方向，查過哪塊就從暗變亮，不給對錯只給覆蓋率。目前沒有真實的
-     cmdlog 分類資料，一律未勘查。 */
-  .audit-coverage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
-  .audit-count { font-size: 18px; color: var(--color-neutral-400); }
-  .audit-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-  .audit-cell { width: 108px; padding: 12px 8px; border-radius: 8px; border: 1px dashed var(--color-neutral-700); text-align: center; }
-  .audit-cell .audit-label { font-size: 14px; color: var(--color-neutral-400); display: block; }
-  .audit-cell .audit-state { font-size: 12px; color: var(--color-neutral-600); display: block; margin-top: 4px; }
-  .audit-cell.visited { border-style: solid; border-color: #4da6ff; background: rgba(77,166,255,0.08); }
-  .audit-cell.visited .audit-label { color: var(--color-text); }
-  .audit-cell.visited .audit-state { color: #8ec6ff; }
+  /* 每一格代表「這一關」，不是某個席位——填色高度＝過這關的席位數 /
+     總席位數。不是二元 pass/fail，是連續的完成比例，這樣才看得出「這關
+     大家卡最久」這種全隊視角，單一席位的 pass/fail 反而沒有意義（見
+     issue #22 後續討論，使用者要求把單席位畫面換成全隊聚合）。 */
+  .cell { width: 68px; height: 68px; border-radius: 10px; box-sizing: border-box; background: var(--color-neutral-800); position: relative; overflow: hidden; }
+  .cell-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: linear-gradient(180deg, #22d3ee, #1a3a6b); transition: height 0.4s ease; }
+  /* 最後兩格（隱藏加分題，vuln6/vuln7）在還沒有任何一台席位過關前畫虛線
+     框，不填色、不疊字——跟前 5 格「即使 0 人過也是實心 + 0/N」不同，這
+     兩格在 0 人完成時代表「還不確定有沒有人碰得到這關」，用虛線跟「已知
+     0 人過」的實心區分開。一旦有人過，就退回跟其他格一樣的實心填色。 */
+  .cell-locked { background: transparent !important; border: 3px dashed var(--color-neutral-700); }
+  /* 疊在填色上面的「幾台過了 / 總共幾台」計數，跟填色高度算的是同一組
+     數字（passCount/total），只是填色給概觀、數字給精確值——text-shadow
+     不是 background，蓋在填色上面深淺都看得清楚，不用另外判斷填色高度
+     決定文字顏色。 */
+  .cell-count { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.85); }
 
   /* 紅隊攻擊拓樸——左邊是紅隊攻擊來源（單一匿名方塊，不對應特定座位），
      右邊是靶機，每個靶機用一對方塊表示（外網／內網兩台機器，跟藍隊
@@ -304,13 +298,6 @@
           <div class="score-track"><div class="score-fill" id="blue-score-fill"></div></div>
         </div>
         <div class="cell-grid" id="blue-cells"></div>
-      </div>
-
-      <!-- 困難模式：不是分數，是五個稽核方向的覆蓋率（見 BLUE.pdf「查清：
-           稽核覆蓋圖」）——查過哪一塊就從暗變亮，不揭露對錯，只給覆蓋率。 -->
-      <div class="audit-coverage" id="blue-audit" hidden>
-        <div class="audit-count">已勘查 <span id="audit-count-val">0</span> / 5</div>
-        <div class="audit-grid" id="audit-grid"></div>
       </div>
     </div>
   </div>
@@ -531,69 +518,100 @@
     return cell;
   }
 
-  // 藍隊整體修補進度：固定 7 格（blue/scoring-engine 既有設計，vuln1-7，
-  // 滿分 140，見 BLUE.pdf），不分組、不分隱藏獎勵，同一排一起顯示。
-  var BLUE_CHECK_COUNT = 7;
-  var BLUE_MAX_SCORE = 140;
+  // 藍隊整體修補進度：跟藍隊組長確認過的實際題目結構——簡單/普通是原本
+  // 5 題（checker.py 的 vuln1-5），困難是 7 題（多兩題隱藏加分題）。難度
+  // 選單（isHardMode()，定義在下面）決定這裡只畫幾格，兩種難度共用同一
+  // 套元件，不再另外做「稽核覆蓋率」那套（舊版本，已證實跟實際題目結構
+  // 不符，整塊移除）。
+  function average(nums) {
+    return nums.reduce(function (a, b) { return a + b; }, 0) / nums.length;
+  }
 
-  // scoreEntry 是 /blue-scores 回傳的其中一筆（{total_score, max_score,
-  // checks}），null／undefined 代表還沒抓到資料，畫面退回「—」+ 全
-  // cell-locked 的靜止狀態。checks 陣列本身已經是後端 leak-filtered 過的
-  // （見 blue_score_receiver.py），隱藏題解鎖前只會拿到 5 筆——不足 7 格
-  // 的部分（i >= checks.length）畫成虛線框 cell-locked，跟「已經檢查過、
-  // 結果是 fail」的實心 cell-idle 區分開：這格目前還不知道會是什麼結果
-  // （可能是還沒解鎖的隱藏題，也可能單純還沒抓到資料），不是已知的失敗。
-  function renderBlueProgress(scoreEntry) {
-    var checks = (scoreEntry && scoreEntry.checks) || [];
-    document.getElementById("blue-score").textContent = scoreEntry ? scoreEntry.total_score : "—";
-    var max = (scoreEntry && scoreEntry.max_score) || BLUE_MAX_SCORE;
-    document.getElementById("blue-score-max").textContent = max;
+  // 最近一次成功抓到的 /blue-scores 資料，難度切換時要重畫格子（格數會
+  // 變），但不想為了切換難度多打一次 API，所以快取起來給 renderBlueProgress
+  // 重複使用。
+  var lastBlueScores = [];
+
+  // scores 是 /blue-scores 回傳的整批席位清單（每個席位一筆 {total_score,
+  // max_score, checks}）。這面板刻意設計成不用人操作，多席位時只顯示
+  // 「全隊平均」，不顯示個別席位、不能切換——大分數是所有席位 total_score
+  // 的平均，滿分是所有席位 max_score 的平均（部分席位解鎖隱藏題、部分還
+  // 沒解鎖時，各自 max_score 是 100 或 140，取平均才不會失真）。每一格
+  // 代表「這一關」，填色高度＝過這關的席位數／總席位數（見上面 CSS 的
+  // .cell-fill 註解）——是連續的完成比例，不是某一個席位的 pass/fail。
+  function renderBlueProgress(scores) {
+    scores = scores || [];
+    lastBlueScores = scores;
+    var hasData = scores.length > 0;
+    var checkCount = isHardMode() ? 7 : 5; // 困難才有兩題隱藏加分題
+    var fallbackMax = isHardMode() ? 140 : 100;
+
+    var avgScore = hasData ? average(scores.map(function (s) { return s.total_score; })) : 0;
+    var avgMax = hasData ? average(scores.map(function (s) { return s.max_score; })) : fallbackMax;
+    document.getElementById("blue-score").textContent = hasData ? Math.round(avgScore) : "—";
+    document.getElementById("blue-score-max").textContent = Math.round(avgMax);
     document.getElementById("blue-score-fill").style.width =
-      scoreEntry ? Math.round((scoreEntry.total_score / max) * 100) + "%" : "0%";
+      hasData ? Math.round((avgScore / avgMax) * 100) + "%" : "0%";
+
+    // 第 i 格的完成比例／計數＝checks[i] 存在且 pass 的席位數／總席位數。
+    // 簡單/普通模式下 checkCount=5，迴圈本來就不會跑到 index 5/6，兩顆
+    // 隱藏加分題完全不會出現在畫面上（不是虛線、是直接不畫），跟困難
+    // 模式共用同一段迴圈邏輯就好，不用另外判斷。
+    var passCounts = [];
+    for (var idx = 0; idx < checkCount; idx++) {
+      passCounts.push(scores.filter(function (s) { return s.checks[idx] && s.checks[idx].status === "pass"; }).length);
+    }
+
+    // 困難模式最後兩格（隱藏加分題）0 人完成時是虛線、不填色、不疊字；
+    // 一旦有人過就變成一般格子，但疊字只顯示完成人數，不顯示分母（跟
+    // 前 5 格的 "X/N" 不同——使用者明確要求的呈現方式，不是遺漏）。
+    var HIDDEN_INDICES = isHardMode() ? [5, 6] : [];
 
     var host = document.getElementById("blue-cells");
     host.innerHTML = "";
-    // 上三下四，不是平均分欄——7 格排成兩排比排成 3+3+1 三排更緊湊。
-    var rowSizes = [3, 4];
+    // 上面放滿 3 格，其餘擠第二排——5 格是 3+2，7 格是 3+4，同一條規則。
+    var rowSizes = [Math.min(3, checkCount), checkCount - Math.min(3, checkCount)];
     var i = 0;
     rowSizes.forEach(function (size) {
       var row = el("div", "cell-row");
-      for (var n = 0; n < size && i < BLUE_CHECK_COUNT; n++, i++) {
-        var cls = "cell-locked";
-        if (checks[i]) cls = checks[i].status === "pass" ? "cell-done" : "cell-idle";
-        row.appendChild(el("div", "cell " + cls));
+      for (var n = 0; n < size && i < checkCount; n++, i++) {
+        var count = passCounts[i];
+        var isHidden = HIDDEN_INDICES.indexOf(i) !== -1;
+
+        if (isHidden && count === 0) {
+          row.appendChild(el("div", "cell cell-locked"));
+          continue;
+        }
+
+        var cell = el("div", "cell");
+        var fill = el("div", "cell-fill");
+        var ratio = hasData ? count / scores.length : 0;
+        fill.style.height = Math.round(ratio * 100) + "%";
+        cell.appendChild(fill);
+        // 沒資料時不疊字（跟填色一樣維持空白，不編造 0/0）。
+        if (hasData) {
+          var countEl = el("div", "cell-count");
+          countEl.textContent = isHidden ? String(count) : count + "/" + scores.length;
+          cell.appendChild(countEl);
+        }
+        row.appendChild(cell);
       }
       host.appendChild(row);
     });
   }
 
-  // /blue-scores 目前設計成單一目標顯示（見 blue_score_receiver.py 的
-  // docstring／issue #22）——多個藍隊席位時先取第一筆，不做跨席位加總
-  // （加總對「7 格代表哪一關」這種版面沒有意義）。抓不到就退回無資料
-  // 狀態，不編造分數。
+  // 全隊平均，前端算——/blue-scores 回傳的是「每個席位」清單，聚合成
+  // 單一數字才符合「面板不用人操作、只看得到全隊」的要求（見上）。抓
+  // 不到就退回無資料狀態，不編造分數。
   async function refreshBlueProgress(apiBase) {
     try {
       var res = await fetch(apiBase + "/blue-scores");
       if (!res.ok) throw new Error("HTTP " + res.status);
       var scores = await res.json();
-      renderBlueProgress(scores[0] || null);
+      renderBlueProgress(scores);
     } catch (err) {
-      renderBlueProgress(null);
+      renderBlueProgress([]);
     }
-  }
-
-  // 困難模式的五個稽核方向，文字照 BLUE.pdf「查清：稽核覆蓋圖」原文。
-  // 目前沒有真實的 cmdlog 分類資料，一律未勘查——之後接上真資料時，把
-  // 對應方向的 el 加上 "visited" class、文字換成「已勘查」即可。
-  var AUDIT_AREAS = ["系統帳號", "檔案權限", "排程任務", "資料庫內容", "對外服務設定"];
-
-  function renderAuditCoverage() {
-    document.getElementById("audit-count-val").textContent = "0";
-    var host = document.getElementById("audit-grid");
-    host.innerHTML = "";
-    AUDIT_AREAS.forEach(function (label) {
-      host.appendChild(el("div", "audit-cell", '<span class="audit-label">' + label + '</span><span class="audit-state">未勘查</span>'));
-    });
   }
 
   var RED_PROMPT = "red@kali-01:~$";
@@ -715,10 +733,11 @@
   // 「目前有沒有對局在跑」（hasMatch，來自 /analysis 的 red_actions）——
   // 有對局才顯示示意用的靜止進度條，沒有就直接講清楚「目前無對局中」，
   // 不要讓觀眾誤以為空白的清單是資料還沒載入。
-  // 藍隊面板現在有兩種內容：簡單/普通是分數+格子（blue-patch），困難是
-  // 稽核覆蓋率（blue-audit）——兩者互斥，且都只在 hasMatch 時顯示。難度
-  // 切換不影響「有沒有對局」，所以另外存 lastHasMatch，切換難度時重算
-  // 一次可見度就好，不用重新打 API。
+  // 難度只決定 blue-patch 面板裡要畫幾格（見 renderBlueProgress 的
+  // checkCount），不再切換成另一塊完全不同的面板——舊的「稽核覆蓋率」
+  // 是照錯誤的題目結構假設做的，已經整塊移除。難度切換不影響「有沒有
+  // 對局」，所以另外存 lastHasMatch，切換難度時重算一次可見度、並用
+  // 快取的 lastBlueScores 重畫格子，不用重新打 API。
   var lastHasMatch = false;
 
   function isHardMode() {
@@ -726,9 +745,8 @@
   }
 
   function updateBluePanelMode() {
-    document.getElementById("blue-panel-title").textContent = isHardMode() ? "藍隊稽核覆蓋率" : "藍隊整體修補進度";
-    document.getElementById("blue-patch").hidden = !(lastHasMatch && !isHardMode());
-    document.getElementById("blue-audit").hidden = !(lastHasMatch && isHardMode());
+    document.getElementById("blue-patch").hidden = !lastHasMatch;
+    renderBlueProgress(lastBlueScores);
   }
 
   function setPanelState(hasMatch) {
@@ -799,8 +817,7 @@
   fitStage();
 
   renderBreachPanel([]);
-  renderBlueProgress(null);
-  renderAuditCoverage();
+  renderBlueProgress([]);
   renderIdleBlueShell();
   document.getElementById("red-shell").appendChild(shellLine("#ff6b78", RED_PROMPT, null, null, caretEl("#ff6b78")));
   refresh();
