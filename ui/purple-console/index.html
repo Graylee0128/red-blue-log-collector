@@ -100,7 +100,10 @@
   .error-banner { display: flex; align-items: center; gap: 16.8px; padding: 11.2px 22.4px; border-radius: 8px; background: #3a1620; border: 1px solid #ff4d5e; font-size: 20px; color: #ff9aa4; flex-shrink: 0; }
 
   .board-row { display: grid; grid-template-columns: 430px minmax(0, 1fr) 430px; gap: 22.4px; height: 470px; flex-shrink: 0; }
-  .panel { display: flex; flex-direction: column; gap: 16.8px; padding: 22.4px 28px; border-radius: 14px; background: var(--color-surface); min-height: 0; }
+  /* overflow:hidden 是最後一道防線——量測式排版（見 renderBreachPanel 的
+     fitCellLayout()）已經會盡量算出塞得下的尺寸，這條只是保證萬一算錯
+     也不會有元素跑到卡片外面，不是排版邏輯本身。 */
+  .panel { display: flex; flex-direction: column; gap: 16.8px; padding: 22.4px 28px; border-radius: 14px; background: var(--color-surface); min-height: 0; overflow: hidden; }
   .panel-head { display: flex; align-items: baseline; gap: 14px; }
   .panel-tag { font-size: 26px; font-weight: 600; letter-spacing: 0.1em; }
   .panel-sub { font-size: 20px; color: var(--color-neutral-500); white-space: nowrap; }
@@ -109,15 +112,15 @@
 
   /* 紅隊攻擊拓樸右側的靶機格——每個靶機一對方塊（外網／內網），用一條
      線連著。CSS Grid + grid-auto-flow:column：一欄最多 --patch-cols 個
-     （見 renderBreachPanel 的 cellSizeForCount()，上限 8），直的往下疊，
-     超過才往右開新欄——維持直排的形狀（面板本身窄而高），不是橫向排開。 */
+     （量測出來的值，見 renderBreachPanel 的 fitCellLayout()），直的往下
+     疊，超過才往右開新欄——維持直排的形狀（面板本身窄而高），不是橫向
+     排開。 */
   .patch-grid { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--patch-cols, 8), auto); align-content: start; justify-content: start; gap: 8px 10px; }
   .patch-pair { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
   /* 格子尺寸由 --breach-cell-size 這個 CSS 變數控制（見 renderBreachPanel
-     的 cellSizeForCount()）——靶機/來源數量少時格子大，數量一多就自動縮
-     小塞進同一塊面板，不用寫死。44px 是變數沒設定時（例如面板還沒渲染
-     過）的預設值，不是實際上限。左邊來源格（.breach-cell）也吃同一個
-     變數，兩邊格子尺寸保證一致。 */
+     的 fitCellLayout()——直接量測卡片可用空間反推尺寸，不是猜公式）。
+     44px 是變數沒設定時（例如面板還沒渲染過）的預設值，不是實際上限。
+     左邊來源格（.breach-cell）也吃同一個變數，兩邊格子尺寸保證一致。 */
   .patch-cell { width: var(--breach-cell-size, 44px); height: var(--breach-cell-size, 44px); flex-shrink: 0; border-radius: 8px; background: var(--color-neutral-900); border: 1px solid var(--color-neutral-800); position: relative; overflow: hidden; transition: width 0.3s ease, height 0.3s ease; }
   .patch-cell-fill { position: absolute; inset: 0; background: linear-gradient(135deg, #1f4a70, #4da6ff); opacity: 0; transition: opacity 0.4s ease; }
   /* 連接外網/內網兩格的線——寬度跟著格子尺寸等比縮放，格子縮小時線也
@@ -310,9 +313,9 @@
       </div>
       <div class="panel-empty" id="red-empty">目前無對局中</div>
       <div class="breach-view" id="red-breach" hidden>
-        <div class="clash-col"><div class="breach-grid" id="origin-grid"></div></div>
+        <div class="clash-col" id="origin-col"><div class="breach-grid" id="origin-grid"></div></div>
         <div class="attack-beam" id="attack-beam"><div class="pulse-dot"></div></div>
-        <div class="clash-col"><div class="patch-grid" id="target-grid"></div></div>
+        <div class="clash-col" id="target-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
       <div class="breach-count-line" id="breach-count-line" hidden>外網 <span id="breach-count-external">0/0</span>　內網 <span id="breach-count-internal">0/0</span></div>
       <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破</div>
@@ -540,20 +543,33 @@
     return seen.size;
   }
 
-  // 格子大小隨數量反向縮放——人少時格子大、視覺清楚，人一多就自動縮小
-  // 塞進同一塊面板，不會爆版。上下限跟藍隊修補格（固定 68px、7 格）刻意
-  // 分開算，因為這裡的靶機數是動態的、可能只有 1 台也可能到十幾台。
+  // 格子大小/每欄幾個不是猜公式算出來的——之前用固定公式（數量對照表）
+  // 挑尺寸，數量一多、要排好幾欄時算出來的寬度還是會超出卡片，因為公式
+  // 完全不知道卡片實際多寬。改成直接量測「藍隊那欄」（.patch-cell 比
+  // .breach-cell 寬，藍隊那邊是限制更緊的一邊，用它當基準最保守，紅隊
+  // 那邊用同一組尺寸一定塞得下）目前的可用寬高，從最大格子開始試，找不
+  // 到塞得下的排列就縮小格子，直到符合或探到下限為止——保證不會溢出。
   var CELL_SIZE_MAX = 56;
-  var CELL_SIZE_MIN = 26;
-  var CELL_SIZE_MAX_AT_COUNT = 3;  // <= 這個數量用最大格子
-  var CELL_SIZE_MIN_AT_COUNT = 16; // >= 這個數量用最小格子
-  var PATCH_COLS_MAX = 5; // 一欄最多幾個（直排），超過往右開新欄
+  var CELL_SIZE_MIN = 18;
+  var ROW_GAP = 8;
+  var COL_GAP = 10;
+  var PAIR_WIDTH_RATIO = 2.45; // 一對＝兩顆格子＋一條連接線（見 .patch-link 的 calc(0.45)）
 
-  function cellSizeForCount(count) {
-    if (count <= CELL_SIZE_MAX_AT_COUNT) return CELL_SIZE_MAX;
-    if (count >= CELL_SIZE_MIN_AT_COUNT) return CELL_SIZE_MIN;
-    var t = (count - CELL_SIZE_MAX_AT_COUNT) / (CELL_SIZE_MIN_AT_COUNT - CELL_SIZE_MAX_AT_COUNT);
-    return Math.round(CELL_SIZE_MAX - t * (CELL_SIZE_MAX - CELL_SIZE_MIN));
+  function fitCellLayout(count) {
+    var col = document.getElementById("target-col");
+    var availW = col.clientWidth || 140;
+    var availH = col.clientHeight || 300;
+
+    for (var size = CELL_SIZE_MAX; size >= CELL_SIZE_MIN; size -= 2) {
+      var rows = Math.max(1, Math.floor((availH + ROW_GAP) / (size + ROW_GAP)));
+      var cols = Math.ceil(count / rows);
+      var neededW = cols * (size * PAIR_WIDTH_RATIO) + (cols - 1) * COL_GAP;
+      if (neededW <= availW) return { size: size, rows: rows };
+    }
+    // 極端情況：就算用最小格子也塞不下（台數多到誇張），格子維持最小值，
+    // 不再繼續縮，寧可視覺擠一點也不要格子小到看不見。
+    var minRows = Math.max(1, Math.floor((availH + ROW_GAP) / (CELL_SIZE_MIN + ROW_GAP)));
+    return { size: CELL_SIZE_MIN, rows: minRows };
   }
 
   // externalCount／internalCount：issue #21 breach_detector.py 依 pivot
@@ -571,28 +587,11 @@
     var realCount = distinctDestinationCount(correlations);
     var count = realCount || BREACH_GRID_FALLBACK;
 
-    // --breach-cell-size 設在 .breach-view 上，origin-grid／target-grid
-    // 兩邊的格子都靠 CSS 變數繼承拿到同一個尺寸，兩邊格子大小才會同步。
-    // --breach-cols／--patch-cols 是左右兩邊各自一排最多幾個（都是上限
-    // 8），兩邊用同一套 grid 排法，形狀才會對得起來。
-    var breachViewEl = document.getElementById("red-breach");
-    var cellSize = cellSizeForCount(count);
-    var cols = Math.min(count, PATCH_COLS_MAX);
-    breachViewEl.style.setProperty("--breach-cell-size", cellSize + "px");
-    breachViewEl.style.setProperty("--breach-cols", cols);
-    breachViewEl.style.setProperty("--patch-cols", cols);
-
-    // 光束跟格子現在都是貼齊 .breach-view 頂端（align-items:flex-start，
-    // 見 CSS），格子本身另外用 align-content:start 貼齊自己欄位的頂端，
-    // 兩者頂端對齊之後，光束再往下推「半個格子區塊高度」，就會落在格子
-    // 直排的正中間（rows 欄最多疊 cols 個，每個 cellSize 高、中間 8px
-    // 間距）——算式跟著格子動態尺寸走，不是寫死的像素值。
-    var rows = cols || 1; // cols 其實是「每欄最多幾個」，見上面 --breach-cols 註解，命名沿用歷史
-    var blockHeight = rows * cellSize + (rows - 1) * 8;
-    document.getElementById("attack-beam").style.marginTop = Math.round(blockHeight / 2) + "px";
-
     // 只有真的有對局資料（realCount > 0）才疊加疑似突破——沒有真實
-    // correlation 資料時 count 是保底假數字，疊上去會誤導。
+    // correlation 資料時 count 是保底假數字，疊上去會誤導。這段要先做：
+    // breach-count-line／breach-legend 顯示與否會改變面板可用高度，得先
+    // 定案再去量測 target-col 的實際尺寸，不然量到的是舊狀態、算出來的
+    // 格子大小會慢半拍。
     var showSuspected = realCount > 0 && (externalCount > 0 || internalCount > 0);
     var suspectedExternal = showSuspected ? Math.min(externalCount, count) : 0;
     var suspectedInternal = showSuspected ? Math.min(internalCount, count) : 0;
@@ -608,6 +607,23 @@
     // 中間的 flex 元件，移除會讓兩欄在光束消失/出現時位置跳動。持續
     // 跑動而不是只播一次，跟格子的亮燈狀態一樣是「目前有沒有疑似突破」。
     document.getElementById("attack-beam").classList.toggle("visible", showSuspected);
+
+    // --breach-cell-size 設在 .breach-view 上，origin-grid／target-grid
+    // 兩邊的格子都靠 CSS 變數繼承拿到同一個尺寸，兩邊格子大小才會同步。
+    // --breach-cols／--patch-cols 是左右兩邊各自一欄最多幾個，兩邊用同
+    // 一組數字、同一套 grid 排法，形狀才會對得起來。
+    var breachViewEl = document.getElementById("red-breach");
+    var layout = fitCellLayout(count);
+    breachViewEl.style.setProperty("--breach-cell-size", layout.size + "px");
+    breachViewEl.style.setProperty("--breach-cols", layout.rows);
+    breachViewEl.style.setProperty("--patch-cols", layout.rows);
+
+    // 光束跟格子都是貼齊 .breach-view 頂端（align-items:flex-start，見
+    // CSS），格子本身另外用 align-content:start 貼齊自己欄位的頂端，兩者
+    // 頂端對齊之後，光束再往下推「半個格子區塊高度」，就會落在格子直排
+    // 的正中間——算式跟著量測出來的格子尺寸/行數走，不是寫死的像素值。
+    var blockHeight = layout.rows * layout.size + (layout.rows - 1) * ROW_GAP;
+    document.getElementById("attack-beam").style.marginTop = Math.round(blockHeight / 2) + "px";
 
     // 紅隊來源格：對局中（hasMatch）全部亮紅燈，代表「紅隊在場」，跟有沒
     // 有疑似突破無關；沒有對局時維持暗——hasMatch 由呼叫端的
