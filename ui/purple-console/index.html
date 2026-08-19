@@ -154,8 +154,10 @@
   .score-row { display: flex; align-items: baseline; gap: 12px; }
   .score-val { font-size: 76px; font-weight: 600; line-height: 1; color: var(--color-text); font-variant-numeric: tabular-nums; }
   .score-max { font-size: 30px; color: var(--color-neutral-500); }
+  /* 分數軌道——目前沒有真資料，固定 0% 寬，只是讓面板不要看起來太空，
+     不是編造進度。 */
   .score-track { width: 100%; height: 10px; border-radius: 999px; background: var(--color-neutral-800); overflow: hidden; }
-  .score-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #1f4a70, #4da6ff); transition: width 0.4s ease; }
+  .score-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #1f4a70, #4da6ff); }
   .cell-grid { display: flex; flex-direction: column; align-items: center; gap: 16px; }
   .cell-row { display: flex; gap: 16px; }
   /* 每一格代表「這一關」，不是某個席位——填色高度＝過這關的席位數 /
@@ -475,8 +477,15 @@
   // 沒有正確標記出這次攻擊，不分「完全沒紀錄」跟「有紀錄但沒告警」，都
   // 算「未被偵測」，不獨立成第四色。藍隊自己的修補進度是另一個完全獨立
   // 的面板（右側 patch-grid，CTF 式漏洞修補題），跟這條時間軸無關。
+  //
+  // issue #20 時間軸雜訊過濾：只顯示有真實檢測結果的事件（c.status === "hit"）。
+  // 不用 technique 過濾——technique 只是 11 條規則的標籤，沒命中規則
+  // 但確實被偵測到的攻擊會被誤隱。此層只過濾顯示，不影響 red_actions 統計。
   function buildChain(correlations) {
-    return correlations.slice().reverse().map(function (c) {
+    return correlations.slice().reverse().filter(function (c) {
+      // 只顯示真實檢測到的攻擊（status === "hit"）
+      return c.status === "hit";
+    }).map(function (c) {
       var fast = c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
       var slow = c.status === "hit" && !fast;
       var missed = c.status !== "hit";
@@ -961,7 +970,6 @@
       refreshBreachPanel(apiBase, correlations, hasData); // 獨立的 fetch（/possible-breaches），失敗不影響上面主要流程
       refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
       refreshBlueShell(apiBase); // 同上
-      refreshBlueProgress(apiBase); // 同上
     } catch (err) {
       setStatus("err", "連線失敗");
       errorBanner.hidden = false;

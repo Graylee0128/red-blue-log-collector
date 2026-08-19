@@ -117,6 +117,31 @@ def blue_payload_from_seat_log(parsed: dict[str, Any], filename: str) -> dict[st
     return payload
 
 
+def is_noise(command: str) -> bool:
+    """判斷一行指令是否明顯是雜訊（純數字、重複字元等打字測試）。
+
+    Returns:
+        True if the line is obvious noise, False if it looks like a real command
+    """
+    if not command:
+        return True
+
+    # 純數字
+    if command.isdigit():
+        return True
+
+    # 單一字元重複（如 "aaaa"、"1111"）— 留意 len >= 3 才當雜訊
+    # 兩個字元可能是縮寫（"ls"、"cd"），不過濾
+    if len(command) >= 3 and len(set(command)) == 1:
+        return True
+
+    # 單一字元重複的變種，留個空白（退格測試："a a a"）
+    if len(set(c for c in command if c != ' ')) == 1 and command.count(' ') >= 2:
+        return True
+
+    return False
+
+
 def ingest_seat_log_line(store: EventStore, team: str, filename: str, line: str) -> None:
     """Parse one seat log line and normalize + store it.
 
@@ -126,6 +151,11 @@ def ingest_seat_log_line(store: EventStore, team: str, filename: str, line: str)
     parsed = parse_command_line(line)
     if parsed is None:
         return
+
+    # 不在 ingest 層過濾——原始日誌完整存入 normalized_events，明顯雜訊的
+    # 過濾工作交給顯示層（前端 buildChain 根據 status 決定顯示）。這樣保留
+    # 完整資料以供稽核，也避免把「沒命中規則但確實被偵測到」的真實案例
+    # 誤隱（issue #20 審查意見）。
 
     if team == "red":
         adapter_normalize = red.normalize
