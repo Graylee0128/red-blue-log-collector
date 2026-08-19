@@ -1040,13 +1040,18 @@
   document.getElementById("reconnect").addEventListener("click", refresh);
   difficultySel.addEventListener("change", updateBluePanelMode);
 
-  // 依視窗寬度自動縮放 1920×1080 的看板，桌面/筆電開啟時不用橫向捲動就能看到全貌。
+  // 依視窗寬度「跟高度」自動縮放 1920×1080 的看板——之前只算寬度，視窗
+  // 不夠高時縮放後的畫布還是會比可視高度高，逼整個網頁（不是畫布內部）
+  // 長出捲軸。用 wrap 的位置反推可用高度（視窗高度 - wrap 上緣位置 -
+  // 一點底部緩衝），寬高兩個比例取較小值，兩個方向都保證塞得下。
   function fitStage() {
     var wrap = document.querySelector(".stage-wrap");
     var stage = document.getElementById("stage");
-    var available = wrap.clientWidth - 4;
-    var scale = Math.min(1, available / 1920);
+    var availableW = wrap.clientWidth - 4;
+    var availableH = window.innerHeight - wrap.getBoundingClientRect().top - 12;
+    var scale = Math.min(1, availableW / 1920, availableH / 1080);
     stage.style.transform = "scale(" + scale + ")";
+    wrap.style.width = (1920 * scale) + "px";
     wrap.style.height = (1080 * scale) + "px";
   }
   window.addEventListener("resize", fitStage);
