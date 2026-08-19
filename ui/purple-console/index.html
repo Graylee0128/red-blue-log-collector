@@ -188,6 +188,12 @@
      .attack-beam 是這兩欄中間真正的 flex 元件（不是絕對定位），兩邊各自
      騰出的空間會自然被光束跟對面那欄吃掉，不用手動算像素。 */
   .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: flex-start; }
+  /* 紅隊來源格改回置中（不是貼左邊界）——貼左邊界會讓格子緊靠面板邊緣、
+     跟光束隔太遠；置中在自己這欄裡，兩側自然各留一點空間：左邊空出來
+     的距離就是使用者要的「左邊空間大一點」，右邊縮短的距離就是「光束
+     靠近紅隊一點」，同一個改動兩件事一起解決。藍隊那欄維持貼左（靠
+     光束那側），理由不變——貼右邊界會溢出卡片。 */
+  .clash-col-origin { justify-content: center; }
   /* 跟右邊 .patch-grid 同一種排法：CSS Grid + grid-auto-flow:column，
      一欄最多 --breach-cols 個（一樣上限 8），直的往下疊，超過才往右開
      新欄。格子尺寸是動態的（見 --breach-cell-size），靠固定像素高度換
@@ -313,7 +319,7 @@
       </div>
       <div class="panel-empty" id="red-empty">目前無對局中</div>
       <div class="breach-view" id="red-breach" hidden>
-        <div class="clash-col" id="origin-col"><div class="breach-grid" id="origin-grid"></div></div>
+        <div class="clash-col clash-col-origin" id="origin-col"><div class="breach-grid" id="origin-grid"></div></div>
         <div class="attack-beam" id="attack-beam"><div class="pulse-dot"></div></div>
         <div class="clash-col" id="target-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
