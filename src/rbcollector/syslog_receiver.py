@@ -50,6 +50,11 @@ _BLUE_ALERT_RE = re.compile(
 )
 _BLUE_ATTACKER_IP_RE = re.compile(r"from ([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})")
 
+# 手動測試用的寬鬆格式：一行 "red: <訊息>" 或 "blue: <訊息>"，不用組出完整的
+# Metis RFC5424 structured-data。沒有 role 資訊就不知道該歸哪隊，所以團隊
+# 前綴是必要的，不能再省——沒有前綴的純文字沒有安全的預設值可以猜。
+_PLAIN_RE = re.compile(r"^(red|blue)\s*[:=]\s*(.+)$", re.IGNORECASE)
+
 
 def parse_syslog_line(line: str) -> dict[str, str] | None:
     """RFC5424 line -> {timestamp, hostname, appname, role, src, msg}, or None if unparsable."""
@@ -67,6 +72,14 @@ def parse_syslog_line(line: str) -> dict[str, str] | None:
         "src": src_match.group(1) if src_match else "",
         "msg": match.group("msg"),
     }
+
+
+def parse_plain_line(line: str) -> tuple[str, str] | None:
+    """"red: <msg>" / "blue: <msg>" -> (team, msg), or None if it doesn't match."""
+    match = _PLAIN_RE.match(line)
+    if not match:
+        return None
+    return match.group(1).lower(), match.group(2)
 
 
 def red_payload_from_syslog(parsed: dict[str, str]) -> dict[str, Any]:
@@ -111,19 +124,28 @@ def ingest_syslog_line(store: EventStore, line: str) -> None:
         return
 
     parsed = parse_syslog_line(line)
-    if parsed is None:
-        logger.warning("unparsable syslog line, skipping: %r", line[:200])
-        return
-
-    role = parsed["role"]
-    if role == "red":
-        adapter_normalize, team, payload = red.normalize, "red", red_payload_from_syslog(parsed)
-    elif role == "blue":
-        adapter_normalize, team, payload = blue.normalize, "blue", blue_payload_from_syslog(parsed)
+    if parsed is not None:
+        role = parsed["role"]
+        if role == "red":
+            adapter_normalize, team, payload = red.normalize, "red", red_payload_from_syslog(parsed)
+        elif role == "blue":
+            adapter_normalize, team, payload = blue.normalize, "blue", blue_payload_from_syslog(parsed)
+        else:
+            # host (docker-events/audit) or missing role: not a red/blue event.
+            logger.debug("skipping non-team syslog line (role=%r, tag=%s)", role, parsed["appname"])
+            return
+        raw_payload = {"raw_line": line, "hostname": parsed["hostname"], "src": parsed["src"], "tag": parsed["appname"]}
     else:
-        # host (docker-events/audit) or missing role: not a red/blue event.
-        logger.debug("skipping non-team syslog line (role=%r, tag=%s)", role, parsed["appname"])
-        return
+        # 不是 Metis 的 RFC5424 格式 -- 試試看寬鬆的手動測試格式
+        # ("red: ..." / "blue: ...") 再放棄。
+        plain = parse_plain_line(line)
+        if plain is None:
+            logger.warning("unparsable syslog line, skipping: %r", line[:200])
+            return
+        team, message = plain
+        adapter_normalize = red.normalize if team == "red" else blue.normalize
+        payload = {"message": message}
+        raw_payload = {"raw_line": line, "hostname": None, "src": None, "tag": "manual-plain-text"}
 
     try:
         event = adapter_normalize(payload)
@@ -131,7 +153,6 @@ def ingest_syslog_line(store: EventStore, line: str) -> None:
         logger.exception("failed to normalize syslog-derived %s payload: %r", team, payload)
         return
 
-    raw_payload = {"raw_line": line, "hostname": parsed["hostname"], "src": parsed["src"], "tag": parsed["appname"]}
     store.append(team=team, raw_payload=raw_payload, event=event)
 
 

@@ -1,6 +1,7 @@
 from rbcollector.syslog_receiver import (
     blue_payload_from_syslog,
     ingest_syslog_line,
+    parse_plain_line,
     parse_syslog_line,
     red_payload_from_syslog,
 )
@@ -106,3 +107,35 @@ def test_ingest_syslog_line_unparsable_line_does_not_raise():
     store = FakeStore()
     ingest_syslog_line(store, "garbage, not RFC5424 at all")
     assert store.appended == []
+
+
+def test_parse_plain_line_red():
+    assert parse_plain_line("red: nmap -sV 10.0.0.20") == ("red", "nmap -sV 10.0.0.20")
+
+
+def test_parse_plain_line_blue_case_insensitive_and_equals():
+    assert parse_plain_line("BLUE = Failed password for root") == ("blue", "Failed password for root")
+
+
+def test_parse_plain_line_rejects_other_text():
+    assert parse_plain_line("hello there") is None
+    assert parse_plain_line("purple: not a real team") is None
+
+
+def test_ingest_syslog_line_accepts_plain_red_fallback():
+    store = FakeStore()
+    ingest_syslog_line(store, "red: nmap -sV 10.0.0.20")
+    assert len(store.appended) == 1
+    team, raw_payload, event = store.appended[0]
+    assert team == "red"
+    assert event["message"] == "nmap -sV 10.0.0.20"
+    assert raw_payload["tag"] == "manual-plain-text"
+
+
+def test_ingest_syslog_line_accepts_plain_blue_fallback():
+    store = FakeStore()
+    ingest_syslog_line(store, "blue: Failed password for root from 10.0.0.10")
+    assert len(store.appended) == 1
+    team, _raw_payload, event = store.appended[0]
+    assert team == "blue"
+    assert event["message"] == "Failed password for root from 10.0.0.10"
