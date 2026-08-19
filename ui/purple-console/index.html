@@ -40,44 +40,38 @@
      element.hidden 實際上不會真的隱藏它們。這條規則用 !important 保證
      hidden 屬性永遠贏，不用逐一拿掉每個 class 的 display。 */
   [hidden] { display: none !important; }
-  /* overflow:hidden 是最終防線——fitStage() 已經會盡量把畫布縮到塞得
-     進視窗，這條只是保證就算縮放計算差個幾像素，也不會逼出頁面捲軸
-     （這頁是投影用看板，裁掉一點點總比長捲軸好）。 */
+  /* overflow:hidden 只是防捲軸的保險——fitStage() 已經用 Math.min(寬,高)
+     算好整張畫布一定塞得進視窗，正常情況不會有內容真的被裁到，這條只
+     防縮放計算差個幾 px 的捨入誤差逼出捲軸。 */
   html, body { margin: 0; background: var(--color-bg); color: var(--color-text); overflow: hidden; }
   body {
     font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
     padding: 16px 20px 20px;
-    display: flex; flex-direction: column; gap: 12px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
     min-height: 100vh;
   }
   a { color: var(--color-accent-300); text-decoration: none; }
   a:hover { color: var(--color-accent-200); }
 
-  /* kiosk 模式（?kiosk 網址參數）：純投影用，藏掉標題列跟控制列、body
-     padding 歸零，把整個視窗高度讓給 .stage-wrap，fitStage() 會自己
-     量到新的可用高度，不用額外改縮放邏輯。 */
+  /* kiosk 模式（?kiosk 網址參數）：純投影用，body padding 歸零，把整個
+     視窗高度讓給 .stage-wrap，fitStage() 會自己量到新的可用高度，不用
+     額外改縮放邏輯。頁面現在只剩 .stage 這一塊內容，沒有另外的標題列/
+     控制列要藏了。 */
   body.kiosk { padding: 0; }
-  body.kiosk .page-head, body.kiosk .controls { display: none; }
 
-  .page-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-  .page-head h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
-  .page-head .sub { font-size: 13px; color: var(--color-neutral-500); }
-
-  .controls {
-    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
-    padding: 6px 16px; border-radius: 10px; background: var(--color-surface);
-    box-shadow: var(--shadow-sm); font-size: 13px; color: var(--color-neutral-400);
-  }
-  .controls .group { display: flex; align-items: center; gap: 8px; }
+  /* 連線位址／重連／狀態／難度切換——除錯跟臨時手動切換用，不是給觀眾
+     看的正式面板，隨手塞在頂部統計列尾端，樣式盡量小、不搶版面。難度
+     之後要改成由入口（Metis 進場碼/URL 參數）帶進來，這個下拉只是過渡。 */
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--color-neutral-500); margin-left: auto; }
   .controls input, .controls select, .controls button {
-    font: inherit; font-size: 13px; color: var(--color-text); background: var(--color-neutral-900);
-    border: 1px solid var(--color-neutral-700); border-radius: 6px; padding: 5px 10px; cursor: pointer;
+    font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-neutral-900);
+    border: 1px solid var(--color-neutral-700); border-radius: 6px; padding: 3px 8px; cursor: pointer;
   }
-  .controls input { cursor: text; min-width: 220px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .controls input { cursor: text; min-width: 140px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
   .controls input:focus-visible, .controls select:focus-visible, .controls button:focus-visible {
     outline: 2px solid var(--color-accent); outline-offset: 2px;
   }
-  .controls .status { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .controls .status { display: flex; align-items: center; gap: 6px; font-size: 12px; }
   .controls .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-neutral-700); }
   .controls .status .dot.ok { background: #37e08a; }
   .controls .status .dot.err { background: #ff4d5e; }
@@ -239,7 +233,10 @@
   .timeline-legend { margin-left: auto; display: flex; flex-wrap: nowrap; gap: 14px; font-size: 13px; color: var(--color-neutral-400); }
   .timeline-legend span { display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
   .timeline-cols { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 8px 14px; align-items: center; font-size: 20px; color: var(--color-neutral-600); }
-  .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+  /* padding-top 給第一列的危險度亮框（.who.severity-high 的 box-shadow）
+     留暈染空間——overflow:auto 會直接裁掉伸出容器邊界的視覺效果，沒有
+     這點留白，第一列的光暈上緣會被切平。 */
+  .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; padding-top: 8px; }
   .t-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 14px; align-items: center; padding: 4px 8px; border-radius: 6px; border-bottom: 1px solid var(--color-divider); white-space: nowrap; }
   /* 危險度高的攻擊——box-shadow 疊一圈亮框＋外散光，不用 border 是為了
      不影響格線寬度計算（跟其他列的 padding/寬度保持一致）。severity 是
@@ -272,30 +269,6 @@
 </head>
 <body>
 
-<div class="page-head">
-  <h1>Purple Console</h1>
-</div>
-
-<div class="controls">
-  <div class="group">
-    <label for="api-base">Collector API</label>
-    <input id="api-base" type="text" placeholder="自動偵測目前主機" spellcheck="false">
-  </div>
-  <button type="button" id="reconnect">重新連線</button>
-  <div class="group">
-    <label for="difficulty">藍隊難度</label>
-    <select id="difficulty">
-      <option value="簡單">簡單</option>
-      <option value="普通" selected>普通</option>
-      <option value="困難">困難</option>
-    </select>
-  </div>
-  <div class="status">
-    <span class="dot" id="status-dot"></span>
-    <span id="status-text">尚未連線</span>
-  </div>
-</div>
-
 <div class="stage-wrap">
 <div class="stage" id="stage">
 
@@ -315,6 +288,19 @@
       <div style="display:flex; align-items:center; gap:11.2px; font-size:20px; color:var(--color-neutral-400); white-space:nowrap;">
         <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 14px var(--color-accent); animation:pulse 2.4s ease-in-out infinite;"></span>
         <span>更新於 <span id="stat-updated">—</span></span>
+      </div>
+      <!-- 臨時擺放——之後藍隊難度要靠入口（Metis 進場碼/URL 參數）分別
+           帶進來，不是這頁自己選；連線位址/狀態也是除錯用，不是給觀眾
+           看的正式面板，先隨手塞在統計列尾端，不特別做版面。 */-->
+      <div class="controls">
+        <select id="difficulty" title="藍隊難度（暫時手動切換，之後由入口決定）">
+          <option value="簡單">簡單</option>
+          <option value="普通" selected>普通</option>
+          <option value="困難">困難</option>
+        </select>
+        <input id="api-base" type="text" placeholder="自動偵測目前主機" spellcheck="false" title="Collector API">
+        <button type="button" id="reconnect">重新連線</button>
+        <span class="status"><span class="dot" id="status-dot"></span><span id="status-text">尚未連線</span></span>
       </div>
     </div>
   </div>
@@ -354,7 +340,7 @@
         </div>
       </div>
       <div class="timeline-cols">
-        <span>時間</span><span style="color:#ff8f99; text-align:center;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff; text-align:center;">藍隊事件</span><span style="text-align:right;">延遲</span>
+        <span style="text-align:center;">時間</span><span style="color:#ff8f99; text-align:center;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff; text-align:center;">藍隊事件</span><span style="text-align:right;">延遲</span>
       </div>
       <div class="timeline-rows" id="timeline-rows"></div>
     </div>
@@ -1048,22 +1034,29 @@
   document.getElementById("reconnect").addEventListener("click", refresh);
   difficultySel.addEventListener("change", updateBluePanelMode);
 
-  // 只依視窗寬度縮放 1920×1080 的看板——畫布永遠貼滿寬度，不留左右
-  // 空白。高度不夠就交給 .stage／html,body 既有的 overflow:hidden 裁掉
-  // 下緣（這頁的既定原則：裁切優於留白/捲軸）。
+  // 寬高都納入計算、取較小的縮放比——保證整張 1920×1080 畫布一定完整
+  // 可見，不會被裁掉；長寬比對不上視窗時，代價是上下或左右留一點空白
+  // （body 用 flex 置中），不是裁切。用 window.innerWidth/Height 量viewport
+  // 本身，不是量 .stage-wrap（它的尺寸就是這個函式要算出來的結果，量
+  // 自己會循環依賴）。
   function fitStage() {
     var wrap = document.querySelector(".stage-wrap");
     var stage = document.getElementById("stage");
-    var availableW = wrap.clientWidth - 4;
-    var scale = availableW / 1920;
+    var bodyStyle = getComputedStyle(document.body);
+    var padX = parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight);
+    var padY = parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
+    var availableW = window.innerWidth - padX;
+    var availableH = window.innerHeight - padY;
+    var scale = Math.min(availableW / 1920, availableH / 1080);
     stage.style.transform = "scale(" + scale + ")";
     wrap.style.width = (1920 * scale) + "px";
     wrap.style.height = (1080 * scale) + "px";
   }
   window.addEventListener("resize", fitStage);
-  // ?kiosk 網址參數：投影用，藏掉標題列跟控制列，讓 fitStage() 量到
-  // 更大的可用高度——不用另外改 fitStage() 本身，它本來就是量測
-  // wrap 的實際位置，不是寫死數字，chrome 一藏它自己會吃到新的高度。
+  // ?kiosk 網址參數：投影用，body padding 歸零，讓 fitStage() 量到更大
+  // 的可用空間——不用另外改 fitStage() 本身，它本來就是即時量測
+  // window.innerWidth/Height 減掉 body padding，padding 一變它自己會
+  // 吃到新的可用尺寸。
   if (new URLSearchParams(location.search).has("kiosk")) {
     document.body.classList.add("kiosk");
   }
