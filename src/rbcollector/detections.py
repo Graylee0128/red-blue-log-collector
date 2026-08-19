@@ -5,10 +5,9 @@ from __future__ import annotations
 
 cyber 的規則查的是這個 repo 沒有的 Loki/Prometheus 來源（vulnerable-app／
 range-target／falco）。語意相同，換了引擎：每條規則檢查紅隊事件的
-`metadata`（原始 ingest payload，見 `NormalizedEvent.metadata`）或
-`message` 是否出現標記，依 `group_by` 在 `window_seconds` 內分組，
-累計次數超過 `threshold` 才算一次偵測 —— 對應 Grafana「> N / 1分鐘」
-的 firing 條件。
+`message`（cmdlog 裡攻擊者實際打的終端機指令）或 `destination` 是否出現
+標記，依 `group_by` 在 `window_seconds` 內分組，累計次數超過 `threshold`
+才算一次偵測 —— 對應 Grafana「> N / 1分鐘」的 firing 條件。
 
 有兩處刻意留白的偵測落差，沿用原始設計（見 cyber scenario 的
 `intentional_gaps` 註記）——不要「順手補齊」：
@@ -16,6 +15,14 @@ range-target／falco）。語意相同，換了引擎：每條規則檢查紅隊
     「讀到不屬於自己的資料」或「批次帶走」。
   - egress-anomaly 只抓「讀到」SSRF 可達的 metadata，不判定
     「這樣讀到的憑證被實際使用」。
+
+⚠️ 佔位資料，尚未拿真實 Metis cmdlog 驗證（issue #30）：
+以下 11 條規則原本比對的是舊系統（Falco）的告警措辭／metadata 旗標，跟
+Metis 紅隊在終端機打的原始指令對不上（issue #30 已記錄）。這版改成比對
+「這個攻擊技法一般會用到的工具/指令關鍵字」（sqlmap、hydra、nc -e 之類），
+是編出來的合理猜測，讓時間軸不要一直卡在 unclassified，**不是**照真實
+cmdlog 內容調校過的結果。等真的從 Metis seat log 或紅隊拿到實際指令範例
+後，要回來對照修正這些關鍵字——別把這版當成已驗證的最終版本。
 """
 
 from collections import defaultdict
@@ -26,22 +33,24 @@ from typing import Any, Callable
 Predicate = Callable[[dict[str, Any]], bool]
 
 
-def _metadata_true(field_name: str) -> Predicate:
-    """`metadata[field_name]` 為真即命中（對應 cyber 的 `field=true` 篩選）。"""
-    return lambda event: bool((event.get("metadata") or {}).get(field_name))
-
-
 def _message_contains(needle: str) -> Predicate:
-    """`message` 含 `needle` 即命中（對應 cyber Falco 的 `|= "text"` 篩選）。"""
+    """`message`（cmdlog 裡的原始指令文字）含 `needle` 即命中。"""
     return lambda event: needle.lower() in str(event.get("message") or "").lower()
 
 
-def _metadata_equals(field_name: str, value: str) -> Predicate:
-    return lambda event: (event.get("metadata") or {}).get(field_name) == value
+def _destination_startswith(prefix: str) -> Predicate:
+    """`destination` 開頭是 `prefix` 即命中——同一類端點、不同 id 的請求
+    （如 `/students/1`、`/students/2`）要落進同一個 group_by 分桶，用完全
+    比對會漏掉「掃很多不同 id」這個 account-discovery 本來要抓的樣子。"""
+    return lambda event: str(event.get("destination") or "").startswith(prefix)
 
 
 def _all(*predicates: Predicate) -> Predicate:
     return lambda event: all(p(event) for p in predicates)
+
+
+def _any(*predicates: Predicate) -> Predicate:
+    return lambda event: any(p(event) for p in predicates)
 
 
 @dataclass(frozen=True)
@@ -57,20 +66,51 @@ class DetectionRule:
 
 #: 總共 11 條規則（舊筆記寫「9條」——Campaign Pack v1 後來新增了 5 條
 #: campus-* 情境規則；已對照 cyber origin/master 重新確認過數量）。
+#: 比對條件是佔位用的攻擊工具/指令關鍵字猜測，見上方 module docstring
+#: 的 issue #30 警語。
 DETECTION_RULES: tuple[DetectionRule, ...] = (
-    DetectionRule("sqli-injection-burst", "T1190", "high", _metadata_true("sqli_suspected")),
-    DetectionRule("sqli-injection-burst-target", "T1190", "high", _metadata_true("sqli_suspected")),
-    # cyber 原本查的是 `ssh_failed_logins_total` 這個 Prometheus counter，
-    # 這個 repo 沒有對應來源，退化成統計送進來、讀起來像 SSH 登入失敗的紅隊事件。
-    DetectionRule("ssh-brute-force", "T1110", "medium", _all(_message_contains("ssh"), _message_contains("fail")), threshold=10),
-    DetectionRule("webshell-upload-target", "T1505", "high", _message_contains("webshell exec detected")),
-    DetectionRule("local-privesc-target", "T1548", "high", _message_contains("sudo find abuse")),
-    DetectionRule("egress-anomaly-target", "T1552", "high", _metadata_true("ssrf_suspected")),
-    DetectionRule("command-injection-target", "T1059", "high", _metadata_true("cmd_injection_suspected")),
-    DetectionRule("cron-persistence-target", "T1053", "high", _message_contains("cron persistence write")),
-    DetectionRule("account-discovery-target", "T1087", "medium", _metadata_equals("destination", "/students/token"), threshold=5),
-    DetectionRule("falco-command-exec", "T1059", "high", _message_contains("exec detected")),
-    DetectionRule("falco-sensitive-file", "T1005", "high", _message_contains("sensitive file access")),
+    # T1190 Exploit Public-Facing Application：自動化 SQLi 工具
+    DetectionRule("sqli-injection-burst", "T1190", "high", _message_contains("sqlmap")),
+    # T1190：手動打 SQLi payload（不靠工具，直接在請求裡塞注入字串）
+    DetectionRule(
+        "sqli-injection-burst-target", "T1190", "high",
+        _any(_message_contains("' or '1'='1"), _message_contains("union select")),
+    ),
+    # T1110 Brute Force：hydra/medusa/ncrack 打 SSH。單次呼叫可能只是
+    # 測試連線，同一來源短時間內重複呼叫才算——保留原本的窗口/門檻機制。
+    DetectionRule(
+        "ssh-brute-force", "T1110", "medium",
+        _all(_message_contains("ssh"), _any(_message_contains("hydra"), _message_contains("medusa"), _message_contains("ncrack"))),
+        threshold=1,
+    ),
+    # T1505 Server Software Component：webshell 工具或明講的 webshell 檔名
+    DetectionRule("webshell-upload-target", "T1505", "high", _any(_message_contains("weevely"), _message_contains("webshell"))),
+    # T1548 Abuse Elevation Control Mechanism：sudo 搭 find 的經典提權手法
+    # （對應 Metis 藍隊第 03 關：入口帳號 sudoers 權限過大）
+    DetectionRule("local-privesc-target", "T1548", "high", _all(_message_contains("sudo"), _message_contains("find"))),
+    # T1552 Unsecured Credentials：打雲端 metadata endpoint 的經典 SSRF 手法
+    DetectionRule("egress-anomaly-target", "T1552", "high", _any(_message_contains("169.254.169.254"), _message_contains("meta-data"))),
+    # T1059 Command and Scripting Interpreter：拿到執行環境的常見反彈 shell 語法
+    DetectionRule(
+        "command-injection-target", "T1059", "high",
+        _any(_message_contains("nc -e"), _message_contains("bash -i"), _message_contains("/bin/sh -i")),
+    ),
+    # T1053 Scheduled Task/Job：改寫 root 排程腳本
+    # （對應 Metis 藍隊第 05 關：root 排程腳本可被任意改寫）
+    DetectionRule("cron-persistence-target", "T1053", "high", _any(_message_contains("crontab"), _message_contains("/etc/cron"))),
+    # T1087 Account Discovery：短時間內掃很多不同 id 的同一類端點——
+    # 只判定「掃很多」，不判定「讀到不該讀的資料」，是刻意留白（見上方 docstring）。
+    # 路徑前綴 "/students/" 沿用舊場景命名，實際 Metis 端點名稱未知，同樣待驗證。
+    DetectionRule("account-discovery-target", "T1087", "medium", _destination_startswith("/students/"), threshold=5),
+    # T1059：取得執行環境後常見的 exec one-liner，跟 command-injection-target
+    # 分開抓是因為這條是「拿到殼之後跑腳本」而不是「取得殼本身」
+    DetectionRule("falco-command-exec", "T1059", "high", _any(_message_contains("python -c"), _message_contains("perl -e"))),
+    # T1005 Data from Local System：讀取密碼／憑證檔案
+    # （對應 Metis 藍隊第 01/02/04 關：DB 密碼檔、系統密碼雜湊檔、內網主機 SSH 憑證）
+    DetectionRule(
+        "falco-sensitive-file", "T1005", "high",
+        _any(_message_contains("/etc/shadow"), _message_contains("id_rsa"), _message_contains("db_password")),
+    ),
 )
 
 
