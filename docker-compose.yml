@@ -75,10 +75,33 @@ services:
     environment:
       DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
       BLUE_SCORE_DIR: "/var/lib/metis/blue-scores"
+      SEAT_LOG_DIR: "/var/log/metis/seat"
       BLUE_SCORE_POLL_INTERVAL: "5"
       LOG_LEVEL: "INFO"
     volumes:
       - /var/lib/metis/blue-scores:/var/lib/metis/blue-scores:ro
+      # issue #22 後續：額外讀 seat log 目錄，掃出真的存在的藍隊席位
+      # （不受 auto_watch.sh 只監控 blue-a-* 的限制），跟 seat-log-receiver
+      # 用同一份唯讀掛載，見 blue_score_receiver.py 的 find_blue_seat_names()。
+      - /var/log/metis/seat:/var/log/metis/seat:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # Issue #21：啟發式 pivot 偵測，tail red-*.out（跟 seat-log-receiver 同一
+  # 個目錄，同一份 volume mount，只是看不同副檔名）。純粹是推論，不是
+  # 確認過的攻擊成功事件，見 breach_detector.py 開頭 docstring 的限制說明。
+  breach-detector:
+    build: .
+    command: ["python", "-m", "rbcollector.breach_detector"]
+    environment:
+      DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
+      SEAT_LOG_DIR: "/var/log/metis/seat"
+      BREACH_POLL_INTERVAL: "10"
+      LOG_LEVEL: "INFO"
+    volumes:
+      - /var/log/metis/seat:/var/log/metis/seat:ro
     depends_on:
       postgres:
         condition: service_healthy

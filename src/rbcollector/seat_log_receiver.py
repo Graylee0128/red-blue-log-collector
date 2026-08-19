@@ -212,6 +212,17 @@ class SeatLogTailer:
             logger.debug("skipping file with unknown team naming: %s", filepath.name)
             return
 
+        # 記「這個紅隊席位真的存在」——只看檔名/檔案存不存在，不看有沒有
+        # 新內容可以 tail，這樣才能算出真實紅隊席位數（見 issue #21 後續
+        # 討論，攻擊拓樸面板的左側來源格改成不再跟藍隊格數綁死）。跟藍隊
+        # 那邊的 blue_seats（blue_score_receiver.py）是對稱設計，只是紅隊
+        # 這邊本來就在 tail *.cmd，順手記，不用另開一支輪詢程式。
+        if team == "red":
+            try:
+                self.store.record_known_red_seat(seat=filepath.stem)
+            except Exception:
+                logger.exception("failed to record known red seat %s", filepath.stem)
+
         try:
             # Check if file has been rotated
             stat = filepath.stat()

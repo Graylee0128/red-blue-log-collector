@@ -3,6 +3,7 @@ import json
 from rbcollector.blue_score_receiver import (
     BlueScoreTailer,
     filtered_report,
+    find_blue_seat_names,
     parse_leaderboard_file,
     visible_checks,
 )
@@ -11,11 +12,18 @@ from rbcollector.blue_score_receiver import (
 class FakeStore:
     def __init__(self):
         self.upserts = []
+        self.known_seats = []
 
     def upsert_blue_score(self, *, target, total_score, max_score, checks, observed_at):
         self.upserts.append(
             {"target": target, "total_score": total_score, "max_score": max_score, "checks": checks, "observed_at": observed_at}
         )
+
+    def record_known_blue_seat(self, *, seat):
+        is_new = seat not in self.known_seats
+        if is_new:
+            self.known_seats.append(seat)
+        return is_new
 
 
 def _checks(*, formal_pass: bool, hidden_pass: bool):
@@ -138,3 +146,42 @@ def test_tailer_poll_once_missing_dir_does_not_raise(tmp_path):
     tailer = BlueScoreTailer(str(tmp_path / "does-not-exist"), store)
     tailer._poll_once()  # 不該拋例外
     assert store.upserts == []
+
+
+def test_find_blue_seat_names_matches_blue_a_and_b(tmp_path):
+    (tmp_path / "blue-a-01.cmd").write_text("", encoding="utf-8")
+    (tmp_path / "blue-b-01.cmd").write_text("", encoding="utf-8")
+    # 紅隊、非 .cmd 檔案都不該被算進去。
+    (tmp_path / "red-01.cmd").write_text("", encoding="utf-8")
+    (tmp_path / "blue-a-01.out").write_text("", encoding="utf-8")
+    assert find_blue_seat_names(tmp_path) == ["blue-a-01", "blue-b-01"]
+
+
+def test_find_blue_seat_names_missing_dir_returns_empty(tmp_path):
+    assert find_blue_seat_names(tmp_path / "does-not-exist") == []
+
+
+def test_tailer_poll_once_records_known_seats_even_without_score_file(tmp_path):
+    # blue-b-01 存在（有 .cmd 檔）但完全沒有 leaderboard 檔案（issue #22
+    # 已知限制：auto_watch.sh 沒有幫它起 checker.py）——照樣要被記成
+    # 「存在」，不能因為沒有分數資料就漏記。
+    score_dir = tmp_path / "scores"
+    seat_dir = tmp_path / "seats"
+    score_dir.mkdir()
+    seat_dir.mkdir()
+    (seat_dir / "blue-a-01.cmd").write_text("", encoding="utf-8")
+    (seat_dir / "blue-b-01.cmd").write_text("", encoding="utf-8")
+
+    store = FakeStore()
+    tailer = BlueScoreTailer(str(score_dir), store, seat_log_dir=str(seat_dir))
+    tailer._poll_once()
+
+    assert store.known_seats == ["blue-a-01", "blue-b-01"]
+    assert store.upserts == []  # 沒有 leaderboard 檔，本來就不該有分數
+
+
+def test_tailer_poll_once_no_seat_log_dir_skips_seat_scan(tmp_path):
+    store = FakeStore()
+    tailer = BlueScoreTailer(str(tmp_path), store)  # seat_log_dir 預設 None
+    tailer._poll_once()
+    assert store.known_seats == []

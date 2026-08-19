@@ -40,35 +40,38 @@
      element.hidden 實際上不會真的隱藏它們。這條規則用 !important 保證
      hidden 屬性永遠贏，不用逐一拿掉每個 class 的 display。 */
   [hidden] { display: none !important; }
-  html, body { margin: 0; background: var(--color-bg); color: var(--color-text); }
+  /* overflow:hidden 只是防捲軸的保險——fitStage() 已經用 Math.min(寬,高)
+     算好整張畫布一定塞得進視窗，正常情況不會有內容真的被裁到，這條只
+     防縮放計算差個幾 px 的捨入誤差逼出捲軸。 */
+  html, body { margin: 0; background: var(--color-bg); color: var(--color-text); overflow: hidden; }
   body {
     font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
-    padding: 28px 28px 56px;
-    display: flex; flex-direction: column; gap: 18px;
+    padding: 16px 20px 20px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
     min-height: 100vh;
   }
   a { color: var(--color-accent-300); text-decoration: none; }
   a:hover { color: var(--color-accent-200); }
 
-  .page-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-  .page-head h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
-  .page-head .sub { font-size: 13px; color: var(--color-neutral-500); }
+  /* kiosk 模式（?kiosk 網址參數）：純投影用，body padding 歸零，把整個
+     視窗高度讓給 .stage-wrap，fitStage() 會自己量到新的可用高度，不用
+     額外改縮放邏輯。頁面現在只剩 .stage 這一塊內容，沒有另外的標題列/
+     控制列要藏了。 */
+  body.kiosk { padding: 0; }
 
-  .controls {
-    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
-    padding: 10px 16px; border-radius: 10px; background: var(--color-surface);
-    box-shadow: var(--shadow-sm); font-size: 13px; color: var(--color-neutral-400);
-  }
-  .controls .group { display: flex; align-items: center; gap: 8px; }
+  /* 連線位址／重連／狀態／難度切換——除錯跟臨時手動切換用，不是給觀眾
+     看的正式面板，隨手塞在頂部統計列尾端，樣式盡量小、不搶版面。難度
+     之後要改成由入口（Metis 進場碼/URL 參數）帶進來，這個下拉只是過渡。 */
+  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--color-neutral-500); margin-left: auto; }
   .controls input, .controls select, .controls button {
-    font: inherit; font-size: 13px; color: var(--color-text); background: var(--color-neutral-900);
-    border: 1px solid var(--color-neutral-700); border-radius: 6px; padding: 5px 10px; cursor: pointer;
+    font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-neutral-900);
+    border: 1px solid var(--color-neutral-700); border-radius: 6px; padding: 3px 8px; cursor: pointer;
   }
-  .controls input { cursor: text; min-width: 220px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
+  .controls input { cursor: text; min-width: 140px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
   .controls input:focus-visible, .controls select:focus-visible, .controls button:focus-visible {
     outline: 2px solid var(--color-accent); outline-offset: 2px;
   }
-  .controls .status { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+  .controls .status { display: flex; align-items: center; gap: 6px; font-size: 12px; }
   .controls .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-neutral-700); }
   .controls .status .dot.ok { background: #37e08a; }
   .controls .status .dot.err { background: #ff4d5e; }
@@ -80,6 +83,10 @@
     box-shadow: var(--shadow-md); border-radius: 14px; padding: 28px 33.6px;
     display: flex; flex-direction: column; gap: 22.4px;
     transform-origin: top left;
+    /* 固定 1920×1080 的畫布，內部任何一塊（面板文字變大、載入中狀態…）
+       撐爆自己配額時，寧可視覺上被裁掉，也不要讓 .stage-wrap 因為內容
+       溢出跑出捲軸——這頁是投影給全場看的公開看板，捲軸比裁切更糟。 */
+    overflow: hidden;
   }
 
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
@@ -100,7 +107,10 @@
   .error-banner { display: flex; align-items: center; gap: 16.8px; padding: 11.2px 22.4px; border-radius: 8px; background: #3a1620; border: 1px solid #ff4d5e; font-size: 20px; color: #ff9aa4; flex-shrink: 0; }
 
   .board-row { display: grid; grid-template-columns: 430px minmax(0, 1fr) 430px; gap: 22.4px; height: 470px; flex-shrink: 0; }
-  .panel { display: flex; flex-direction: column; gap: 16.8px; padding: 22.4px 28px; border-radius: 14px; background: var(--color-surface); min-height: 0; }
+  /* overflow:hidden 是最後一道防線——量測式排版（見 renderBreachPanel 的
+     fitCellLayout()）已經會盡量算出塞得下的尺寸，這條只是保證萬一算錯
+     也不會有元素跑到卡片外面，不是排版邏輯本身。 */
+  .panel { display: flex; flex-direction: column; gap: 16.8px; padding: 22.4px 28px; border-radius: 14px; background: var(--color-surface); min-height: 0; overflow: hidden; }
   .panel-head { display: flex; align-items: baseline; gap: 14px; }
   .panel-tag { font-size: 26px; font-weight: 600; letter-spacing: 0.1em; }
   .panel-sub { font-size: 20px; color: var(--color-neutral-500); white-space: nowrap; }
@@ -108,20 +118,44 @@
   .panel-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--color-neutral-600); text-align: center; }
 
   /* 紅隊攻擊拓樸右側的靶機格——每個靶機一對方塊（外網／內網），用一條
-     線連著。flex-direction:column + flex-wrap:wrap 讓格數（跟不同
-     destination 數同步，見 renderBreachPanel）超過一欄能裝的高度時自動
-     換到下一欄，不用寫死總數對應幾欄。 */
-  .patch-grid { flex: 1; min-height: 0; display: flex; flex-direction: column; flex-wrap: wrap; align-content: center; justify-content: center; gap: 10px 20px; }
+     線連著。CSS Grid + grid-auto-flow:row：固定 --patch-cols 欄（目前是
+     2，見 renderBreachPanel 的 FIXED_COLS），機器數平分到每一排，超過
+     兩欄的量往下開新排——維持窄而高的直排形狀，不是橫向排開。 */
+  .patch-grid { flex: 1; min-height: 0; display: grid; grid-auto-flow: row; grid-template-columns: repeat(var(--patch-cols, 2), auto); align-content: start; justify-content: start; gap: 8px 10px; }
   .patch-pair { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
-  .patch-cell { width: 44px; height: 44px; flex-shrink: 0; border-radius: 8px; background: var(--color-neutral-900); border: 1px solid var(--color-neutral-800); position: relative; overflow: hidden; }
+  /* 格子尺寸由 --breach-cell-size 這個 CSS 變數控制（見 renderBreachPanel
+     的 fitCellLayout()——直接量測卡片可用空間反推尺寸，不是猜公式）。
+     44px 是變數沒設定時（例如面板還沒渲染過）的預設值，不是實際上限。
+     左邊來源格（.breach-cell）也吃同一個變數，兩邊格子尺寸保證一致。 */
+  .patch-cell { width: var(--breach-cell-size, 44px); height: var(--breach-cell-size, 44px); flex-shrink: 0; border-radius: 8px; background: var(--color-neutral-900); border: 1px solid var(--color-neutral-800); position: relative; overflow: hidden; transition: width 0.3s ease, height 0.3s ease; }
   .patch-cell-fill { position: absolute; inset: 0; background: linear-gradient(135deg, #1f4a70, #4da6ff); opacity: 0; transition: opacity 0.4s ease; }
-  .patch-link { width: 20px; height: 3px; background: var(--color-neutral-700); flex-shrink: 0; }
+  /* 連接外網/內網兩格的線——寬度跟著格子尺寸等比縮放，格子縮小時線也
+     跟著縮小，不然格子變小之後這條線相對變得過寬，把整排往外撐，中間
+     的攻擊光束反而被擠得不明顯。 */
+  .patch-link { width: calc(var(--breach-cell-size, 44px) * 0.45); height: 3px; background: var(--color-neutral-700); flex-shrink: 0; transition: width 0.3s ease; }
+  /* 對局中的常駐藍燈——藍隊自己的主題色，代表「藍隊在場」，跟左邊紅隊
+     來源格的 .active 是同一組邏輯（穩定不脈動）。就是這個元素原本預留
+     的藍色漸層，只是把 opacity 從 0 打開，不是新顏色。 */
+  .patch-cell-fill.active { opacity: 0.45; }
+  /* 疑似突破（issue #21，breach_detector.py 的啟發式 pivot 偵測）——刻意
+     用紅色＋脈動，跟上面「對局中」的藍色 active 狀態區分開，不能讓
+     觀眾把推論當成權威判定；suspected 跟 active 互斥，見 renderBreachPanel。 */
+  .patch-cell-fill.suspected { opacity: 0.75; background: linear-gradient(135deg, #7a1414, #ff3b3b); box-shadow: 0 0 10px 2px rgba(255,59,59,0.5); animation: pulse 2s ease-in-out infinite; }
+  /* 外網/內網實際數字——比下面純粹「有沒有疑似突破」的小字圖例顯眼，
+     緊接在格子下面，是這個面板除了格子本身之外唯一的精確數字。 */
+  .breach-count-line { font-size: 30px; font-weight: 600; color: var(--color-neutral-300); text-align: center; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  /* 純粹的圖例（點的顏色代表什麼），字級跟藍隊那邊的小字說明同一個
+     量級，放在面板最下面，不搶格子跟上面數字的視覺重量。 */
+  .breach-legend { font-size: 16px; color: var(--color-neutral-500); text-align: center; margin-top: auto; padding-top: 8px; }
+  .breach-legend .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; background: #ff3b3b; margin-right: 6px; vertical-align: middle; }
 
-  /* 藍隊整體修補進度——大分數（現在／滿分 140，滿分是真實數字，來自
-     checker.py 7 關 20 分制，見 BLUE.pdf；現在的分數目前沒有真資料，
-     固定顯示「—」，不編造），下面一排格子，不分組。cell-done／
-     cell-active／cell-idle 三態備用，目前沒有真實的每項完成狀態，
-     一律畫成 cell-idle，不編造哪些已修好。 */
+  /* 藍隊整體修補進度——大分數是**全隊平均**（所有回報中的席位 total_score
+     取平均，不是單一席位），滿分同樣取所有席位 max_score 的平均（鎖定/
+     解鎖隱藏題時每個席位的 max_score 本來就會不同，100 或 140，平均起來
+     才不會在只有部分席位解鎖時失真）。這面板刻意設計成完全不用人工操作
+     （不能點、不能切換席位）——多席位時只看得到「全隊」這一個數字，看
+     不到個別席位，見 issue #22 的後續討論。真資料見 blue_score_receiver.
+     py（/blue-scores 回傳的是「每個席位」清單，平均在前端算）。 */
   .blue-progress { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 28px; }
   .score-block { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; max-width: 280px; }
   .score-row { display: flex; align-items: baseline; gap: 12px; }
@@ -133,43 +167,76 @@
   .score-fill { height: 100%; width: 0%; border-radius: 999px; background: linear-gradient(90deg, #1f4a70, #4da6ff); }
   .cell-grid { display: flex; flex-direction: column; align-items: center; gap: 16px; }
   .cell-row { display: flex; gap: 16px; }
-  .cell { width: 68px; height: 68px; border-radius: 10px; }
-  .cell-idle { background: var(--color-neutral-800); }
-  .cell-done { background: linear-gradient(135deg, #22d3ee, #22d3ee); }
-  .cell-active { background: linear-gradient(90deg, #1a3a6b, #22d3ee); }
-
-  /* 困難模式：稽核覆蓋率（見 BLUE.pdf「查清：稽核覆蓋圖」）——五個稽核
-     方向，查過哪塊就從暗變亮，不給對錯只給覆蓋率。目前沒有真實的
-     cmdlog 分類資料，一律未勘查。 */
-  .audit-coverage { flex: 1; min-height: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; }
-  .audit-count { font-size: 18px; color: var(--color-neutral-400); }
-  .audit-grid { display: flex; flex-wrap: wrap; justify-content: center; gap: 10px; }
-  .audit-cell { width: 108px; padding: 12px 8px; border-radius: 8px; border: 1px dashed var(--color-neutral-700); text-align: center; }
-  .audit-cell .audit-label { font-size: 14px; color: var(--color-neutral-400); display: block; }
-  .audit-cell .audit-state { font-size: 12px; color: var(--color-neutral-600); display: block; margin-top: 4px; }
-  .audit-cell.visited { border-style: solid; border-color: #4da6ff; background: rgba(77,166,255,0.08); }
-  .audit-cell.visited .audit-label { color: var(--color-text); }
-  .audit-cell.visited .audit-state { color: #8ec6ff; }
+  /* 每一格代表「這一關」，不是某個席位——填色高度＝過這關的席位數 /
+     總席位數。不是二元 pass/fail，是連續的完成比例，這樣才看得出「這關
+     大家卡最久」這種全隊視角，單一席位的 pass/fail 反而沒有意義（見
+     issue #22 後續討論，使用者要求把單席位畫面換成全隊聚合）。 */
+  .cell { width: 68px; height: 68px; border-radius: 10px; box-sizing: border-box; background: var(--color-neutral-800); position: relative; overflow: hidden; }
+  .cell-fill { position: absolute; left: 0; right: 0; bottom: 0; height: 0%; background: linear-gradient(135deg, #22d3ee, #1a3a6b); transition: height 0.4s ease; }
+  /* 最後兩格（隱藏加分題，vuln6/vuln7）在還沒有任何一台席位過關前畫虛線
+     框，不填色、不疊字——跟前 5 格「即使 0 人過也是實心 + 0/N」不同，這
+     兩格在 0 人完成時代表「還不確定有沒有人碰得到這關」，用虛線跟「已知
+     0 人過」的實心區分開。一旦有人過，就退回跟其他格一樣的實心填色。 */
+  .cell-locked { background: transparent !important; border: 3px dashed var(--color-neutral-700); }
+  /* 疊在填色上面的「幾台過了 / 總共幾台」計數，跟填色高度算的是同一組
+     數字（passCount/total），只是填色給概觀、數字給精確值——text-shadow
+     不是 background，蓋在填色上面深淺都看得清楚，不用另外判斷填色高度
+     決定文字顏色。 */
+  .cell-count { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: 15px; font-weight: 600; font-variant-numeric: tabular-nums; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,0.85); }
 
   /* 紅隊攻擊拓樸——左邊是紅隊攻擊來源（單一匿名方塊，不對應特定座位），
      右邊是靶機，每個靶機用一對方塊表示（外網／內網兩台機器，跟藍隊
-     修補格同一套 .patch-pair 元件），中間通道箭頭代表「偵測到攻擊行動
-     時，左邊打向右邊」的方向。目前沒有真實的攻擊偵測事件可以觸發，兩邊
-     都畫成未亮燈的骨架，通道也先是靜止箭頭。 */
-  .breach-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
-  .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: center; }
-  /* 直排、超過 5 個換第二欄——跟旁邊 .patch-grid（靶機格）同一種排法，
-     max-height 卡在剛好 5 格的高度（5*44 + 4*8 間距），逼它換欄，不是
-     等實際欄高不夠才換。 */
-  .breach-grid { display: flex; flex-direction: column; flex-wrap: wrap; max-height: 252px; align-content: center; justify-content: center; align-self: center; gap: 8px; }
-  .breach-cell { width: 44px; height: 44px; flex-shrink: 0; border-radius: 6px; background: var(--color-neutral-900); border: 1px solid #5c2530; }
+     修補格同一套 .patch-pair 元件）。真資料見 issue #21 breach_detector.
+     py（/possible-breaches）——中間的 .attack-beam 光束跟兩邊的
+     .suspected 亮燈都是同一組疑似突破信號驅動，沒有疑似突破時維持未
+     亮燈的骨架、光束不出現，不編造。 */
+  .breach-view { flex: 1; min-height: 0; display: flex; align-items: flex-start; justify-content: center; gap: 26px; padding-top: 4px; }
+  /* 兩欄都靠自己這欄的左邊放，不置中——紅隊靠左邊界，藍隊靠中間（也就是
+     朝光束那側靠），兩邊都往中間偏，藍隊不會被推到面板右邊界外面。
+     .attack-beam 是這兩欄中間真正的 flex 元件（不是絕對定位），兩邊各自
+     騰出的空間會自然被光束跟對面那欄吃掉，不用手動算像素。 */
+  .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: flex-start; }
+  /* 紅隊來源格改回置中（不是貼左邊界）——貼左邊界會讓格子緊靠面板邊緣、
+     跟光束隔太遠；置中在自己這欄裡，兩側自然各留一點空間：左邊空出來
+     的距離就是使用者要的「左邊空間大一點」，右邊縮短的距離就是「光束
+     靠近紅隊一點」，同一個改動兩件事一起解決。藍隊那欄維持貼左（靠
+     光束那側），理由不變——貼右邊界會溢出卡片。 */
+  .clash-col-origin { justify-content: center; }
+  /* 跟右邊 .patch-grid 同一種排法：CSS Grid + grid-auto-flow:row，固定
+     --breach-cols 欄（一樣是 2），機器數平分到每一排，超過往下開新排。
+     格子尺寸是動態的（見 --breach-cell-size），靠固定像素高度換欄的舊
+     算法（max-height）在格子縮小後會跟右邊對不齊，改成跟右邊同一套
+     邏輯才會維持同一種直排形狀。 */
+  .breach-grid { display: grid; grid-auto-flow: row; grid-template-columns: repeat(var(--breach-cols, 2), auto); align-content: start; justify-content: start; align-self: flex-start; gap: 8px; }
+  .breach-cell { width: var(--breach-cell-size, 44px); height: var(--breach-cell-size, 44px); flex-shrink: 0; border-radius: 6px; background: var(--color-neutral-900); border: 1px solid #5c2530; transition: background 0.4s ease, border-color 0.4s ease, width 0.3s ease, height 0.3s ease; }
+  /* 對局中（不管有沒有疑似突破）全部常駐紅燈，代表「紅隊在場」——紅隊
+     自己的主題色，穩定不脈動（脈動保留給紅色的警示語意，這裡只是
+     「有人在」的狀態燈）。 */
+  .breach-cell.active { background: linear-gradient(135deg, #7a1f2a, #ff4d5e); border-color: #ff4d5e; }
+  /* 紅→藍中間的光束——只在有疑似突破時出現，一顆發光小球在兩欄之間來回
+     跑，呼應「紅隊打過去」這個方向性。是兩個 .clash-col 中間真正的 flex
+     子元素（不是絕對定位蓋在算好的中點），紅隊靠左之後光束的位置會跟著
+     flex 排版自然調整，不用手動改座標；用 opacity 切換顯示/隱藏，而不是
+     從版面移除，這樣光束出現/消失不會讓兩邊格子的位置跳動。 */
+  /* margin-left 只拉近跟紅隊那側的間距，右邊（跟藍隊那側）的 gap 不動
+     ——只往左移，不會跟藍隊格子靠更近。 */
+  .attack-beam { position: relative; width: 24px; height: 20px; flex-shrink: 0; pointer-events: none; opacity: 0; transition: opacity 0.3s ease; margin-left: -18px; }
+  .attack-beam.visible { opacity: 1; }
+  .attack-beam .pulse-dot { position: absolute; top: 50%; left: -10px; margin-top: -4.5px; width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b; box-shadow: 0 0 12px 4px rgba(255,59,59,0.75); animation: beam-travel 1.3s ease-in-out infinite; }
+  /* 拖尾——子元素會跟著 .pulse-dot 的 left 動畫一起移動，不用另外算位置。
+     往移動方向的反方向（左邊）延伸、由圓點的顏色淡出到透明，做出流線感。 */
+  .attack-beam .pulse-dot::before { content: ""; position: absolute; top: 50%; right: 100%; transform: translateY(-50%); width: 28px; height: 3px; background: linear-gradient(90deg, transparent, #ff3b3b); border-radius: 3px; opacity: 0.7; }
+  @keyframes beam-travel { 0% { left: -10px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
 
   .timeline-head { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; }
   .timeline-title { font-size: 15px; letter-spacing: 0.1em; color: var(--color-neutral-500); white-space: nowrap; flex-shrink: 0; }
   .timeline-legend { margin-left: auto; display: flex; flex-wrap: nowrap; gap: 14px; font-size: 13px; color: var(--color-neutral-400); }
   .timeline-legend span { display: flex; align-items: center; gap: 6px; white-space: nowrap; flex-shrink: 0; }
   .timeline-cols { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 8px 14px; align-items: center; font-size: 20px; color: var(--color-neutral-600); }
-  .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; }
+  /* padding-top 給第一列的危險度亮框（.who.severity-high 的 box-shadow）
+     留暈染空間——overflow:auto 會直接裁掉伸出容器邊界的視覺效果，沒有
+     這點留白，第一列的光暈上緣會被切平。 */
+  .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; padding-top: 8px; }
   .t-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 14px; align-items: center; padding: 4px 8px; border-radius: 6px; border-bottom: 1px solid var(--color-divider); white-space: nowrap; }
   /* 危險度高的攻擊——box-shadow 疊一圈亮框＋外散光，不用 border 是為了
      不影響格線寬度計算（跟其他列的 padding/寬度保持一致）。severity 是
@@ -202,31 +269,6 @@
 </head>
 <body>
 
-<div class="page-head">
-  <h1>Purple Console</h1>
-  <span class="sub">投影用大螢幕戰況板 · 頂部統計格與中間關聯時間軸接 collector 的公開 /analysis 即時資料 · 左右紅／藍隊進度條與下方 Shell 目前無對應資料模型，固定顯示無資料狀態</span>
-</div>
-
-<div class="controls">
-  <div class="group">
-    <label for="api-base">Collector API</label>
-    <input id="api-base" type="text" placeholder="自動偵測目前主機" spellcheck="false">
-  </div>
-  <button type="button" id="reconnect">重新連線</button>
-  <div class="group">
-    <label for="difficulty">藍隊難度</label>
-    <select id="difficulty">
-      <option value="簡單">簡單</option>
-      <option value="普通" selected>普通</option>
-      <option value="困難">困難</option>
-    </select>
-  </div>
-  <div class="status">
-    <span class="dot" id="status-dot"></span>
-    <span id="status-text">尚未連線</span>
-  </div>
-</div>
-
 <div class="stage-wrap">
 <div class="stage" id="stage">
 
@@ -247,6 +289,19 @@
         <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 14px var(--color-accent); animation:pulse 2.4s ease-in-out infinite;"></span>
         <span>更新於 <span id="stat-updated">—</span></span>
       </div>
+      <!-- 臨時擺放——之後藍隊難度要靠入口（Metis 進場碼/URL 參數）分別
+           帶進來，不是這頁自己選；連線位址/狀態也是除錯用，不是給觀眾
+           看的正式面板，先隨手塞在統計列尾端，不特別做版面。 */-->
+      <div class="controls">
+        <select id="difficulty" title="藍隊難度（暫時手動切換，之後由入口決定）">
+          <option value="簡單">簡單</option>
+          <option value="普通" selected>普通</option>
+          <option value="困難">困難</option>
+        </select>
+        <input id="api-base" type="text" placeholder="自動偵測目前主機" spellcheck="false" title="Collector API">
+        <button type="button" id="reconnect">重新連線</button>
+        <span class="status"><span class="dot" id="status-dot"></span><span id="status-text">尚未連線</span></span>
+      </div>
     </div>
   </div>
 
@@ -263,11 +318,15 @@
         <span class="panel-tag" style="color:#ff8f99;">RED</span>
         <span class="panel-sub">紅隊攻擊拓樸</span>
       </div>
-      <div class="panel-empty" id="red-empty">目前無對局中</div>
+      <div class="panel-empty" id="red-loading">載入中…</div>
+      <div class="panel-empty" id="red-empty" hidden>目前無對局中</div>
       <div class="breach-view" id="red-breach" hidden>
-        <div class="clash-col"><div class="breach-grid" id="origin-grid"></div></div>
-        <div class="clash-col"><div class="patch-grid" id="target-grid"></div></div>
+        <div class="clash-col clash-col-origin" id="origin-col"><div class="breach-grid" id="origin-grid"></div></div>
+        <div class="attack-beam" id="attack-beam"><div class="pulse-dot"></div></div>
+        <div class="clash-col" id="target-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
+      <div class="breach-count-line" id="breach-count-line" hidden>外網 <span id="breach-count-external">0/0</span>　內網 <span id="breach-count-internal">0/0</span></div>
+      <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破</div>
     </div>
 
     <div class="panel" style="box-shadow:var(--shadow-sm);">
@@ -281,7 +340,7 @@
         </div>
       </div>
       <div class="timeline-cols">
-        <span>時間</span><span style="color:#ff8f99; text-align:center;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff; text-align:center;">藍隊事件</span><span style="text-align:right;">延遲</span>
+        <span style="text-align:center;">時間</span><span style="color:#ff8f99; text-align:center;">紅隊行動</span><span style="text-align:center;">關聯</span><span style="color:#8ec6ff; text-align:center;">藍隊事件</span><span style="text-align:right;">延遲</span>
       </div>
       <div class="timeline-rows" id="timeline-rows"></div>
     </div>
@@ -291,7 +350,8 @@
         <span class="panel-tag" style="color:#8ec6ff;">BLUE</span>
         <span class="panel-sub" id="blue-panel-title">藍隊整體修補進度</span>
       </div>
-      <div class="panel-empty" id="blue-empty">目前無對局中</div>
+      <div class="panel-empty" id="blue-loading">載入中…</div>
+      <div class="panel-empty" id="blue-empty" hidden>目前無對局中</div>
 
       <div class="blue-progress" id="blue-patch" hidden>
         <div class="score-block">
@@ -299,13 +359,6 @@
           <div class="score-track"><div class="score-fill" id="blue-score-fill"></div></div>
         </div>
         <div class="cell-grid" id="blue-cells"></div>
-      </div>
-
-      <!-- 困難模式：不是分數，是五個稽核方向的覆蓋率（見 BLUE.pdf「查清：
-           稽核覆蓋圖」）——查過哪一塊就從暗變亮，不揭露對錯，只給覆蓋率。 -->
-      <div class="audit-coverage" id="blue-audit" hidden>
-        <div class="audit-count">已勘查 <span id="audit-count-val">0</span> / 5</div>
-        <div class="audit-grid" id="audit-grid"></div>
       </div>
     </div>
   </div>
@@ -335,10 +388,8 @@
   var POLL_MS = 8000;
   var API_KEY = "purple-console.api-base";
   // 靶機淪陷數方塊網格——左邊紅隊攻擊來源、右邊靶機，都匿名、不對應特定
-  // 座位/身分，純粹是「打穿了幾台」的視覺化。目前沒有真實的「攻擊成功」
-  // 事件可以驅動，先用固定格數畫出兩邊全部未亮燈的骨架；之後接上真資料
-  // 時，每來一次新的偵測事件就讓通道播一次光束、點亮右邊對應格子
-  // （.breach-cell.hit），不用重寫版面。
+  // 座位/身分，純粹是「打穿了幾台」的視覺化，真資料見 renderBreachPanel
+  // （issue #21 疑似突破偵測）。
   // 沒有任何 destination 資訊時的保底格數（見 renderBreachPanel）——
   // adapters 目前是「假設欄位名」，實際場次如果都抓不到 destination，
   // 至少讓面板看起來不是空的，不代表真實數字。
@@ -483,91 +534,302 @@
     });
   }
 
-  function fillCellGrid(hostId, count) {
+  // active：全部格子一起亮或一起暗（不是逐格點亮），紅隊來源格代表的是
+  // 「紅隊在場」，不是個別攻擊行動的計數，跟靶機格那種逐格點亮語意不同。
+  function fillCellGrid(hostId, count, active) {
     var host = document.getElementById(hostId);
     host.innerHTML = "";
     for (var i = 0; i < count; i++) {
-      host.appendChild(el("div", "breach-cell"));
+      host.appendChild(el("div", "breach-cell" + (active ? " active" : "")));
     }
   }
 
-  // 左邊紅隊攻擊來源格、右邊靶機格，格數同步，等於目前 correlations 裡
-  // 看到幾個不同的 destination（靶機）——靶機增加/減少，兩邊格子一起變。
-  // destination 是既有欄位（adapters/store 早就在存，見 analysis.py 的
-  // matching 邏輯），不用動後端。沒有任何 destination 資訊時退回保底格數，
-  // 不是真數字。點亮狀態（.hit）目前還沒有真實的「攻擊成功」事件可以
-  // 驅動，一律未亮燈。
-  function distinctDestinationCount(correlations) {
-    var seen = new Set();
-    correlations.forEach(function (c) {
-      var dest = c.red && c.red.destination;
-      if (dest) seen.add(dest);
-    });
-    return seen.size;
+  // 格子大小/每欄幾個不是猜公式算出來的——之前用固定公式（數量對照表）
+  // 挑尺寸，數量一多、要排好幾欄時算出來的寬度還是會超出卡片，因為公式
+  // 完全不知道卡片實際多寬。改成直接量測「藍隊那欄」（.patch-cell 比
+  // .breach-cell 寬，藍隊那邊是限制更緊的一邊，用它當基準最保守，紅隊
+  // 那邊用同一組尺寸一定塞得下）目前的可用寬高，從最大格子開始試，找不
+  // 到塞得下的排列就縮小格子，直到符合或探到下限為止——保證不會溢出。
+  var CELL_SIZE_MAX = 56;
+  var CELL_SIZE_MIN = 18;
+  var ROW_GAP = 8;
+  var COL_GAP = 10;
+  var PAIR_WIDTH_RATIO = 2.45; // 一對＝兩顆格子＋一條連接線（見 .patch-link 的 calc(0.45)）
+  var FIXED_COLS = 2; // 固定兩欄，不隨數量/空間變動——排數＝ceil(count/2)，機器數平分到每排
+
+  function fitCellLayout(count) {
+    var col = document.getElementById("target-col");
+    var availW = col.clientWidth || 140;
+    var availH = col.clientHeight || 300;
+    var cols = FIXED_COLS;
+    var rows = Math.ceil(count / cols);
+
+    for (var size = CELL_SIZE_MAX; size >= CELL_SIZE_MIN; size -= 2) {
+      var neededW = cols * (size * PAIR_WIDTH_RATIO) + (cols - 1) * COL_GAP;
+      var neededH = rows * size + (rows - 1) * ROW_GAP;
+      if (neededW <= availW && neededH <= availH) return { size: size, cols: cols, rows: rows };
+    }
+    // 極端情況：就算用最小格子縱向也塞不下（台數多到誇張），格子維持
+    // 最小值，欄數仍然固定兩欄，不再繼續縮。
+    return { size: CELL_SIZE_MIN, cols: cols, rows: rows };
   }
 
-  function renderBreachPanel(correlations) {
-    var count = distinctDestinationCount(correlations || []) || BREACH_GRID_FALLBACK;
-    fillCellGrid("origin-grid", count);
+  // externalCount／internalCount：issue #21 breach_detector.py 依 pivot
+  // 深度分出的兩層（見 breach_detector.py 的 find_pivot_targets()
+  // docstring——hop=1 只可能是外網 blue-a，hop>=2 才代表已經先站上 blue-a
+  // 才碰得到的內網 blue-b，不需要解析容器名稱）。靶機格本身沒有名字對應
+  // （格子純粹是「有幾台不同的靶機」的計數，不是特定哪一台），所以沒辦法
+  // 精準點亮「就是那一台」，只能點亮前 N 對的外網／內網格——跟這個面板
+  // 既有的「只給數量、不給身份」設計一致，不是新的簡化。
+  function renderBreachPanel(correlations, externalCount, internalCount, hasMatch, redSeatCount) {
+    correlations = correlations || [];
+    externalCount = externalCount || 0;
+    internalCount = internalCount || 0;
+    hasMatch = !!hasMatch;
+    redSeatCount = redSeatCount || 0;
+    // 靶機格總數（右邊）改用藍隊席位數（藍隊修補進度面板快取的同一份
+    // 資料，見下面 renderBlueProgress）——舊版用
+    // distinctDestinationCount(correlations) 只算紅隊「已經打過」的
+    // destination，演練剛開始、紅隊還沒出手時永遠是 0，格子看起來一直
+    // 是空的。lastBlueSeatCount（/blue-seats，掃 seat log 目錄）比
+    // lastBlueScores.length（/blue-scores，只有真的回報分數的席位）
+    // 更準——同樣是 auto_watch.sh 沒涵蓋 blue-b-* 的已知限制，取兩者
+    // 較大值兜底。
+    var realCount = Math.max(lastBlueScores.length, lastBlueSeatCount);
+    var count = realCount || BREACH_GRID_FALLBACK;
+    // 來源格總數（左邊）改用真實紅隊席位數（/red-seats，跟藍隊那組對稱，
+    // seat_log_receiver.py 順手記）——不再跟右邊的靶機數綁死（見使用者
+    // 回饋：兩邊格數同步時，藍隊席位數一改，左邊會顯示不存在的紅隊
+    // 席位）。抓不到就退回跟右邊一樣的保底數字，單純讓面板看起來不空。
+    var originCount = redSeatCount || count;
 
-    // 每個靶機是一對方塊（外網／內網），跟藍隊修補格同一套元件。
+    // 只有真的有對局資料（realCount > 0）才疊加疑似突破——沒有真實
+    // correlation 資料時 count 是保底假數字，疊上去會誤導。這段要先做：
+    // breach-count-line／breach-legend 顯示與否會改變面板可用高度，得先
+    // 定案再去量測 target-col 的實際尺寸，不然量到的是舊狀態、算出來的
+    // 格子大小會慢半拍。
+    var showSuspected = realCount > 0 && (externalCount > 0 || internalCount > 0);
+    var suspectedExternal = showSuspected ? Math.min(externalCount, count) : 0;
+    var suspectedInternal = showSuspected ? Math.min(internalCount, count) : 0;
+    document.getElementById("breach-count-line").hidden = !showSuspected;
+    document.getElementById("breach-legend").hidden = !showSuspected;
+    // count 是目前畫出來的靶機格總數（分母），suspectedExternal／
+    // suspectedInternal 是被點亮的格數（分子）——跟格子本身點亮的數量
+    // 完全同一組數字，只是多印出來給人看精確值。
+    document.getElementById("breach-count-external").textContent = suspectedExternal + "/" + count;
+    document.getElementById("breach-count-internal").textContent = suspectedInternal + "/" + count;
+    // 光束：呼應「紅隊打過去」的方向性，只在有疑似突破時出現。用 class
+    // 切 opacity（見上面 CSS），不是從版面移除——光束的容器本來就是兩欄
+    // 中間的 flex 元件，移除會讓兩欄在光束消失/出現時位置跳動。持續
+    // 跑動而不是只播一次，跟格子的亮燈狀態一樣是「目前有沒有疑似突破」。
+    document.getElementById("attack-beam").classList.toggle("visible", showSuspected);
+
+    // --breach-cell-size 設在 .breach-view 上，origin-grid／target-grid
+    // 兩邊的格子都靠 CSS 變數繼承拿到同一個尺寸，兩邊格子大小才會同步
+    // （即使兩邊格數不同也一樣大）。--breach-cols／--patch-cols 是左右
+    // 兩邊固定的欄數（2），量測用兩邊數量取較大值（layoutCount）算尺寸，
+    // 保證比較擠的那一邊也塞得下，另一邊格數少、自然用不到那麼多排。
+    var layoutCount = Math.max(count, originCount);
+    var breachViewEl = document.getElementById("red-breach");
+    var layout = fitCellLayout(layoutCount);
+    breachViewEl.style.setProperty("--breach-cell-size", layout.size + "px");
+    breachViewEl.style.setProperty("--breach-cols", layout.cols);
+    breachViewEl.style.setProperty("--patch-cols", layout.cols);
+
+    // 光束跟格子都是貼齊 .breach-view 頂端（align-items:flex-start，見
+    // CSS），格子本身另外用 align-content:start 貼齊自己欄位的頂端，兩者
+    // 頂端對齊之後，光束再往下推「半個格子區塊高度」，就會落在格子的
+    // 正中間——算式跟著量測出來的格子尺寸/實際排數走，不是寫死的像素值。
+    var blockHeight = layout.rows * layout.size + (layout.rows - 1) * ROW_GAP;
+    document.getElementById("attack-beam").style.marginTop = Math.round(blockHeight / 2) + "px";
+
+    // 紅隊來源格：對局中（hasMatch）全部亮紅燈，代表「紅隊在場」，跟有沒
+    // 有疑似突破無關；沒有對局時維持暗——hasMatch 由呼叫端的
+    // red_actions > 0 決定，這支函式不重算。格數用 originCount（自己的
+    // 真實紅隊席位數），不是 count（靶機數）。
+    fillCellGrid("origin-grid", originCount, hasMatch);
+
+    // 每個靶機是一對方塊（外網／內網），跟藍隊修補格同一套元件。base 狀態
+    // （對局中、沒被標成疑似突破）是常駐藍燈，代表「藍隊在場」；被標成
+    // 疑似突破的格子蓋成紅色警示，兩者互斥，疑似突破優先顯示。
     var targetHost = document.getElementById("target-grid");
     targetHost.innerHTML = "";
     for (var i = 0; i < count; i++) {
       var pair = el("div", "patch-pair");
-      pair.appendChild(patchCell());
+      pair.appendChild(patchCell(i < suspectedExternal ? "suspected" : hasMatch ? "active" : "none"));
       pair.appendChild(el("div", "patch-link"));
-      pair.appendChild(patchCell());
+      pair.appendChild(patchCell(i < suspectedInternal ? "suspected" : hasMatch ? "active" : "none"));
       targetHost.appendChild(pair);
     }
   }
 
   // 紅隊攻擊拓樸右側靶機格：每格代表一台靶機的其中一台機器（外網／
-  // 內網），亮度用 opacity 代表完成比例（0 = 全暗），目前沒有真實資料，
-  // 一律固定 opacity:0，不編造。
-  function patchCell() {
+  // 內網）。state="suspected" 是 issue #21 的啟發式 pivot 偵測結果（紅
+  // 色脈動警示）——不是確認過的攻擊成功。state="active" 是「對局中、藍隊在場」
+  // 的常駐藍燈（沿用既有的 patch-cell-fill 藍色漸層，只是把 opacity 從
+  // 0 打開，不是新顏色）。state="none"（沒有對局）維持空白，不編造。
+  function patchCell(state) {
     var cell = el("div", "patch-cell");
-    var fill = el("div", "patch-cell-fill");
-    fill.style.opacity = "0";
+    var extra = state === "suspected" ? " suspected" : state === "active" ? " active" : "";
+    var fill = el("div", "patch-cell-fill" + extra);
     cell.appendChild(fill);
     return cell;
   }
 
-  // 藍隊整體修補進度：固定 7 格（blue/scoring-engine 既有設計，vuln1-7，
-  // 滿分 140，見 BLUE.pdf），不分組、不分隱藏獎勵，同一排一起顯示。目前
-  // 沒有真實的每項完成狀態，一律 cell-idle，分數維持「—」，不編造。
-  var BLUE_CHECK_COUNT = 7;
-  var BLUE_MAX_SCORE = 140;
+  // /possible-breaches 是 issue #21 breach_detector.py 的啟發式 pivot
+  // 偵測結果（{seat, target_host, layer, observed_at} 清單）——依 layer
+  // 分成外網／內網兩組相異 target_host 數量，餵給 renderBreachPanel 決定
+  // 要點亮幾對靶機格的哪一邊。抓不到就當作 0（沒有疑似突破），不影響
+  // 上面主要的 correlations 畫面。
+  async function refreshBreachPanel(apiBase, correlations, hasMatch) {
+    var externalSize = 0;
+    var internalSize = 0;
+    try {
+      var res = await fetch(apiBase + "/possible-breaches");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var breaches = await res.json();
+      var external = new Set();
+      var internal = new Set();
+      breaches.forEach(function (b) {
+        (b.layer === "internal" ? internal : external).add(b.target_host);
+      });
+      externalSize = external.size;
+      internalSize = internal.size;
+    } catch (err) {
+      externalSize = 0;
+      internalSize = 0;
+    }
+    var redSeatCount = 0;
+    try {
+      var seatRes = await fetch(apiBase + "/red-seats");
+      if (!seatRes.ok) throw new Error("HTTP " + seatRes.status);
+      var redSeats = await seatRes.json();
+      redSeatCount = redSeats.length;
+    } catch (err) {
+      redSeatCount = 0; // 抓不到就讓 renderBreachPanel 自己退回跟靶機數一樣
+    }
+    renderBreachPanel(correlations, externalSize, internalSize, hasMatch, redSeatCount);
+  }
 
-  function renderBlueProgress() {
-    document.getElementById("blue-score").textContent = "—";
-    document.getElementById("blue-score-max").textContent = BLUE_MAX_SCORE;
+  // 藍隊整體修補進度：跟藍隊組長確認過的實際題目結構——簡單/普通是原本
+  // 5 題（checker.py 的 vuln1-5），困難是 7 題（多兩題隱藏加分題）。難度
+  // 選單（isHardMode()，定義在下面）決定這裡只畫幾格，兩種難度共用同一
+  // 套元件，不再另外做「稽核覆蓋率」那套（舊版本，已證實跟實際題目結構
+  // 不符，整塊移除）。
+  function average(nums) {
+    return nums.reduce(function (a, b) { return a + b; }, 0) / nums.length;
+  }
+
+  // 最近一次成功抓到的 /blue-scores 資料，難度切換時要重畫格子（格數會
+  // 變），但不想為了切換難度多打一次 API，所以快取起來給 renderBlueProgress
+  // 重複使用。
+  var lastBlueScores = [];
+  var lastBlueSeatCount = 0;
+
+  // scores 是 /blue-scores 回傳的整批席位清單（每個席位一筆 {total_score,
+  // max_score, checks}）。這面板刻意設計成不用人操作，多席位時只顯示
+  // 「全隊平均」，不顯示個別席位、不能切換——大分數是所有席位 total_score
+  // 的平均，滿分是所有席位 max_score 的平均（部分席位解鎖隱藏題、部分還
+  // 沒解鎖時，各自 max_score 是 100 或 140，取平均才不會失真）。每一格
+  // 代表「這一關」，填色高度＝過這關的席位數／總席位數（見上面 CSS 的
+  // .cell-fill 註解）——是連續的完成比例，不是某一個席位的 pass/fail。
+  //
+  // totalSeats 是 /blue-seats 掃出來、真的存在的席位數（見 issue #22
+  // 後續討論）——跟 scores.length 分開算：scores 只有 checker.py 真的
+  // 有回報分數的席位（目前已知 auto_watch.sh 沒涵蓋 blue-b-*，那些席位
+  // 完全不會出現在 scores 裡），分母只用 scores.length 會比實際席位數
+  // 少。分母＝兩者取大，分子（passCounts、平均分數）維持只算有分數的
+  // 席位——沒分數的席位沒有「pass 或 fail」可言，硬算成 fail 或拉進
+  // 平均分數都是編造，只讓分母反映真實席位數就好。
+  function renderBlueProgress(scores, totalSeats) {
+    scores = scores || [];
+    totalSeats = totalSeats || 0;
+    lastBlueScores = scores;
+    lastBlueSeatCount = totalSeats;
+    var hasData = scores.length > 0;
+    var denom = Math.max(scores.length, totalSeats) || 1;
+    var checkCount = isHardMode() ? 7 : 5; // 困難才有兩題隱藏加分題
+    var fallbackMax = isHardMode() ? 140 : 100;
+
+    var avgScore = hasData ? average(scores.map(function (s) { return s.total_score; })) : 0;
+    var avgMax = hasData ? average(scores.map(function (s) { return s.max_score; })) : fallbackMax;
+    document.getElementById("blue-score").textContent = hasData ? Math.round(avgScore) : "—";
+    document.getElementById("blue-score-max").textContent = Math.round(avgMax);
+    document.getElementById("blue-score-fill").style.width =
+      hasData ? Math.round((avgScore / avgMax) * 100) + "%" : "0%";
+
+    // 第 i 格的完成比例／計數＝checks[i] 存在且 pass 的席位數／denom
+    // （見上方 denom 說明）。簡單/普通模式下 checkCount=5，迴圈本來就
+    // 不會跑到 index 5/6，兩顆隱藏加分題完全不會出現在畫面上（不是
+    // 虛線、是直接不畫），跟困難模式共用同一段迴圈邏輯就好，不用另外
+    // 判斷。
+    var passCounts = [];
+    for (var idx = 0; idx < checkCount; idx++) {
+      passCounts.push(scores.filter(function (s) { return s.checks[idx] && s.checks[idx].status === "pass"; }).length);
+    }
+
+    // 困難模式最後兩格（隱藏加分題）0 人完成時是虛線、不填色、不疊字；
+    // 一旦有人過就變成一般格子，但疊字只顯示完成人數，不顯示分母（跟
+    // 前 5 格的 "X/N" 不同——使用者明確要求的呈現方式，不是遺漏）。
+    var HIDDEN_INDICES = isHardMode() ? [5, 6] : [];
+
     var host = document.getElementById("blue-cells");
     host.innerHTML = "";
-    // 上三下四，不是平均分欄——7 格排成兩排比排成 3+3+1 三排更緊湊。
-    var rowSizes = [3, 4];
+    // 上面放滿 3 格，其餘擠第二排——5 格是 3+2，7 格是 3+4，同一條規則。
+    var rowSizes = [Math.min(3, checkCount), checkCount - Math.min(3, checkCount)];
     var i = 0;
     rowSizes.forEach(function (size) {
       var row = el("div", "cell-row");
-      for (var n = 0; n < size && i < BLUE_CHECK_COUNT; n++, i++) {
-        row.appendChild(el("div", "cell cell-idle"));
+      for (var n = 0; n < size && i < checkCount; n++, i++) {
+        var count = passCounts[i];
+        var isHidden = HIDDEN_INDICES.indexOf(i) !== -1;
+
+        if (isHidden && count === 0) {
+          row.appendChild(el("div", "cell cell-locked"));
+          continue;
+        }
+
+        var cell = el("div", "cell");
+        var fill = el("div", "cell-fill");
+        var ratio = hasData ? count / denom : 0;
+        fill.style.height = Math.round(ratio * 100) + "%";
+        cell.appendChild(fill);
+        // 沒資料時不疊字（跟填色一樣維持空白，不編造 0/0）。
+        if (hasData) {
+          var countEl = el("div", "cell-count");
+          countEl.textContent = isHidden ? String(count) : count + "/" + denom;
+          cell.appendChild(countEl);
+        }
+        row.appendChild(cell);
       }
       host.appendChild(row);
     });
   }
 
-  // 困難模式的五個稽核方向，文字照 BLUE.pdf「查清：稽核覆蓋圖」原文。
-  // 目前沒有真實的 cmdlog 分類資料，一律未勘查——之後接上真資料時，把
-  // 對應方向的 el 加上 "visited" class、文字換成「已勘查」即可。
-  var AUDIT_AREAS = ["系統帳號", "檔案權限", "排程任務", "資料庫內容", "對外服務設定"];
-
-  function renderAuditCoverage() {
-    document.getElementById("audit-count-val").textContent = "0";
-    var host = document.getElementById("audit-grid");
-    host.innerHTML = "";
-    AUDIT_AREAS.forEach(function (label) {
-      host.appendChild(el("div", "audit-cell", '<span class="audit-label">' + label + '</span><span class="audit-state">未勘查</span>'));
-    });
+  // 全隊平均，前端算——/blue-scores 回傳的是「每個席位」清單，聚合成
+  // 單一數字才符合「面板不用人操作、只看得到全隊」的要求（見上）。
+  // /blue-seats 是額外的席位數來源（見 renderBlueProgress 的 totalSeats
+  // 說明），失敗就當 0，不影響分數本身。都抓不到就退回無資料狀態，
+  // 不編造分數。
+  async function refreshBlueProgress(apiBase) {
+    var scores = [];
+    try {
+      var res = await fetch(apiBase + "/blue-scores");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      scores = await res.json();
+    } catch (err) {
+      scores = [];
+    }
+    var totalSeats = 0;
+    try {
+      var seatRes = await fetch(apiBase + "/blue-seats");
+      if (!seatRes.ok) throw new Error("HTTP " + seatRes.status);
+      var seats = await seatRes.json();
+      totalSeats = seats.length;
+    } catch (err) {
+      totalSeats = 0; // 抓不到就退回只用 scores.length 當分母，不影響分數本身
+    }
+    renderBlueProgress(scores, totalSeats);
   }
 
   var RED_PROMPT = "red@kali-01:~$";
@@ -689,10 +951,11 @@
   // 「目前有沒有對局在跑」（hasMatch，來自 /analysis 的 red_actions）——
   // 有對局才顯示示意用的靜止進度條，沒有就直接講清楚「目前無對局中」，
   // 不要讓觀眾誤以為空白的清單是資料還沒載入。
-  // 藍隊面板現在有兩種內容：簡單/普通是分數+格子（blue-patch），困難是
-  // 稽核覆蓋率（blue-audit）——兩者互斥，且都只在 hasMatch 時顯示。難度
-  // 切換不影響「有沒有對局」，所以另外存 lastHasMatch，切換難度時重算
-  // 一次可見度就好，不用重新打 API。
+  // 難度只決定 blue-patch 面板裡要畫幾格（見 renderBlueProgress 的
+  // checkCount），不再切換成另一塊完全不同的面板——舊的「稽核覆蓋率」
+  // 是照錯誤的題目結構假設做的，已經整塊移除。難度切換不影響「有沒有
+  // 對局」，所以另外存 lastHasMatch，切換難度時重算一次可見度、並用
+  // 快取的 lastBlueScores 重畫格子，不用重新打 API。
   var lastHasMatch = false;
 
   function isHardMode() {
@@ -700,13 +963,18 @@
   }
 
   function updateBluePanelMode() {
-    document.getElementById("blue-panel-title").textContent = isHardMode() ? "藍隊稽核覆蓋率" : "藍隊整體修補進度";
-    document.getElementById("blue-patch").hidden = !(lastHasMatch && !isHardMode());
-    document.getElementById("blue-audit").hidden = !(lastHasMatch && isHardMode());
+    document.getElementById("blue-patch").hidden = !lastHasMatch;
+    renderBlueProgress(lastBlueScores, lastBlueSeatCount);
   }
 
   function setPanelState(hasMatch) {
     lastHasMatch = hasMatch;
+    // 「載入中」只是第一次成功拿到 /analysis 回應之前的過渡狀態——這支
+    // 函式只會在 refresh() 成功拿到資料後才被呼叫，所以在這裡關掉就
+    // 保證只會關一次、關了不會再開，不用另外開一個 flag 追蹤「是不是
+    // 第一次載入」。
+    document.getElementById("red-loading").hidden = true;
+    document.getElementById("blue-loading").hidden = true;
     document.getElementById("red-empty").hidden = hasMatch;
     document.getElementById("red-breach").hidden = !hasMatch;
     document.getElementById("blue-empty").hidden = hasMatch;
@@ -746,9 +1014,16 @@
       document.getElementById("stat-updated").textContent = new Date().toLocaleTimeString("zh-TW", { hour12: false });
 
       renderTimeline(buildChain(correlations));
-      renderBreachPanel(correlations);
       refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
       refreshBlueShell(apiBase); // 同上
+      // refreshBreachPanel 會讀 lastBlueScores／lastBlueSeatCount（藍隊
+      // 面板快取的資料）當拓樸格數的分母——這兩支都是 fire-and-forget
+      // 的話，refreshBreachPanel 讀到的常常是「上一輪」的舊快取，不是
+      // 這一輪剛抓到的，第一次載入時舊快取是初始值 0，就會退回保底的
+      // 6 格。改成先 await refreshBlueProgress 把快取更新完，再讓
+      // refreshBreachPanel 讀，才會是同一輪的最新資料。
+      await refreshBlueProgress(apiBase);
+      refreshBreachPanel(apiBase, correlations, hasData);
     } catch (err) {
       setStatus("err", "連線失敗");
       errorBanner.hidden = false;
@@ -759,21 +1034,36 @@
   document.getElementById("reconnect").addEventListener("click", refresh);
   difficultySel.addEventListener("change", updateBluePanelMode);
 
-  // 依視窗寬度自動縮放 1920×1080 的看板，桌面/筆電開啟時不用橫向捲動就能看到全貌。
+  // 寬高都納入計算、取較小的縮放比——保證整張 1920×1080 畫布一定完整
+  // 可見，不會被裁掉；長寬比對不上視窗時，代價是上下或左右留一點空白
+  // （body 用 flex 置中），不是裁切。用 window.innerWidth/Height 量viewport
+  // 本身，不是量 .stage-wrap（它的尺寸就是這個函式要算出來的結果，量
+  // 自己會循環依賴）。
   function fitStage() {
     var wrap = document.querySelector(".stage-wrap");
     var stage = document.getElementById("stage");
-    var available = wrap.clientWidth - 4;
-    var scale = Math.min(1, available / 1920);
+    var bodyStyle = getComputedStyle(document.body);
+    var padX = parseFloat(bodyStyle.paddingLeft) + parseFloat(bodyStyle.paddingRight);
+    var padY = parseFloat(bodyStyle.paddingTop) + parseFloat(bodyStyle.paddingBottom);
+    var availableW = window.innerWidth - padX;
+    var availableH = window.innerHeight - padY;
+    var scale = Math.min(availableW / 1920, availableH / 1080);
     stage.style.transform = "scale(" + scale + ")";
+    wrap.style.width = (1920 * scale) + "px";
     wrap.style.height = (1080 * scale) + "px";
   }
   window.addEventListener("resize", fitStage);
+  // ?kiosk 網址參數：投影用，body padding 歸零，讓 fitStage() 量到更大
+  // 的可用空間——不用另外改 fitStage() 本身，它本來就是即時量測
+  // window.innerWidth/Height 減掉 body padding，padding 一變它自己會
+  // 吃到新的可用尺寸。
+  if (new URLSearchParams(location.search).has("kiosk")) {
+    document.body.classList.add("kiosk");
+  }
   fitStage();
 
   renderBreachPanel([]);
-  renderBlueProgress();
-  renderAuditCoverage();
+  renderBlueProgress([], 0);
   renderIdleBlueShell();
   document.getElementById("red-shell").appendChild(shellLine("#ff6b78", RED_PROMPT, null, null, caretEl("#ff6b78")));
   refresh();

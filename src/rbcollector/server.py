@@ -72,6 +72,36 @@ def blue_scores() -> list[dict[str, Any]]:
     return store.list_blue_scores()
 
 
+@app.get("/blue-seats")
+def blue_seats() -> list[str]:
+    """從 seat log 目錄掃出來、確認真的存在的藍隊席位名稱（issue #22 後續）
+    ——刻意跟 /blue-scores 分開：checker.py／auto_watch.sh 目前只監控
+    blue-a-*，blue-b-* 完全不會出現在 /blue-scores 裡，用 /blue-scores
+    的筆數當「總席位數」的分母會少算。這支只看檔案存不存在，不看有沒有
+    計分，前端拿來對「目前總共有幾個藍隊席位」比較準。"""
+    return store.list_known_blue_seats()
+
+
+@app.get("/red-seats")
+def red_seats() -> list[str]:
+    """從 seat log 目錄掃出來、確認真的存在的紅隊席位名稱——跟 /blue-seats
+    對稱，seat_log_receiver.py 本來就在 tail red-*.cmd，順手記。攻擊拓樸
+    面板的左側來源格用這個當自己的真實計數，不再跟右側靶機格數綁死
+    （issue #21 後續討論）。"""
+    return store.list_known_red_seats()
+
+
+@app.get("/possible-breaches")
+def possible_breaches() -> list[dict[str, Any]]:
+    """issue #21 的啟發式 pivot 偵測結果（breach_detector.py）——終端機
+    視窗標題出現不同主機名稱的推論，不是確認過的攻擊成功事件，前端顯示
+    時要標示成疑似/未確認，不能跟 hit/gap 那種權威判定混在一起。layer
+    （external/internal）是從 pivot 深度推論的外網/內網，不是解析容器
+    名稱得來的（見 breach_detector.py 的說明）。跟 /blue-scores 一樣公開
+    讀，不需要 purple clearance。"""
+    return store.list_possible_breaches()
+
+
 @app.get("/timeline")
 def timeline(limit: int = Query(500, ge=1, le=5000)) -> list[dict[str, Any]]:
     return store.list_events(team=None, limit=limit)

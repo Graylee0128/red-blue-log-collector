@@ -1,4 +1,5 @@
 from rbcollector.seat_log_receiver import (
+    SeatLogTailer,
     blue_payload_from_seat_log,
     get_team_from_filename,
     ingest_seat_log_line,
@@ -11,10 +12,17 @@ from rbcollector.seat_log_receiver import (
 class FakeStore:
     def __init__(self):
         self.appended = []
+        self.known_red_seats = []
 
     def append(self, *, team, raw_payload, event):
         self.appended.append((team, raw_payload, event))
         return True
+
+    def record_known_red_seat(self, *, seat):
+        is_new = seat not in self.known_red_seats
+        if is_new:
+            self.known_red_seats.append(seat)
+        return is_new
 
 
 def test_get_team_from_filename_red():
@@ -127,3 +135,22 @@ def test_ingest_seat_log_line_preserves_real_commands():
     store = FakeStore()
     ingest_seat_log_line(store, "red", "red-01.cmd", "nmap -sV 10.0.0.20")
     assert len(store.appended) == 1
+
+
+def test_tailer_records_known_red_seat_even_without_new_lines(tmp_path):
+    # 席位存在（檔案存在）就該被記到，不用等有新指令可以 tail——這樣
+    # 「真實紅隊席位數」才不會漏掉剛開機、還沒人打字的席位。
+    (tmp_path / "red-01.cmd").write_text("", encoding="utf-8")
+    store = FakeStore()
+    tailer = SeatLogTailer(str(tmp_path), store)
+    tailer._tail_file(tmp_path / "red-01.cmd")
+    assert store.known_red_seats == ["red-01"]
+    assert store.appended == []  # 空檔案沒有指令可存，這是分開的兩件事
+
+
+def test_tailer_does_not_record_blue_seat_as_red(tmp_path):
+    (tmp_path / "blue-a-01.cmd").write_text("", encoding="utf-8")
+    store = FakeStore()
+    tailer = SeatLogTailer(str(tmp_path), store)
+    tailer._tail_file(tmp_path / "blue-a-01.cmd")
+    assert store.known_red_seats == []
