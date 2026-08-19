@@ -21,6 +21,19 @@ issue #21's discussion of why action_result can't be used for this):
   - it says "an interactive shell appeared on a different host", not
     "the red team achieved their objective" -- those aren't the same claim
 
+external vs internal layer: Metis declined to provide a container id->name
+mapping (see issue #21 discussion), so we can't resolve *which* machine was
+hit -- but we don't need names for external/internal. compose.seat.yml's own
+topology guarantees red only has a route to blue-a (DMZ); reaching blue-b
+(internal) requires already being on blue-a first. So "hop count away from
+the seat's own baseline" (see find_pivot_targets()) doubles as the layer
+signal for free: hop=1 is necessarily the DMZ hop, hop>=2 necessarily means
+a second, deeper hop that could only happen from inside blue-a. This still
+can't tell a real blue-a/blue-b breach apart from an accidental hop onto
+another red seat (no id/name to check against) -- see issue #21's note that
+this scenario currently has no red-vs-red gameplay mode, so that edge case
+is low-probability in practice, not eliminated.
+
 Consumers (the Purple Console attack-topology panel) must present this as
 suspected/unconfirmed, never mixed into the confirmed hit/gap correlation
 data that drives detection_rate/MTTD.
@@ -55,9 +68,22 @@ _SESSION_RE = re.compile(r'Script started on .*?\[COMMAND="docker exec -it (\S+)
 _OSC_TITLE_RE = re.compile(r"\x1b\]0;[^@\x07]*@([^:\x07]+):")
 
 
-def find_pivot_targets(content: str) -> list[str]:
-    """掃過整份 .out 內容，回傳「跟該次 session 第一次看到的 host 不同」的
-    所有相異 host，依第一次出現的順序。session 邊界見 _SESSION_RE。"""
+def find_pivot_targets(content: str) -> list[tuple[str, int]]:
+    """掃過整份 .out 內容，回傳 (target_host, hop) 清單，依第一次出現的
+    順序。hop 是「離自己的 session 基準幾步」：
+
+      hop=1：從自己的席位直接換到另一個 host——對應 Metis 的網路拓樸
+             （compose.seat.yml），紅隊只碰得到 blue-a（DMZ），所以第一
+             層 pivot 只可能是「打進外網」。
+      hop>=2：已經站在某個 pivot host 上，又換到另一個不同的 host（不是
+             跳回自己的基準）——因為 blue-b（內網）在拓樸上沒有到紅隊的
+             直接路由，唯一碰得到的方式是先站在 blue-a 上再往裡跳，所以
+             第二層以上對應「打穿到內網」。
+
+    這個分層不需要知道容器真正的名字（Metis 不提供 id→name 對照），純粹
+    從「換了幾次地方」這個已經有的資料推論，跟拓樸文件裡寫死的路由限制
+    對得上。session 邊界見 _SESSION_RE，跳回自己的基準會重設 hop（例如
+    pivot 完 exit 回來，之後重新 pivot 算重新從 hop=1 開始）。"""
     events: list[tuple[int, str, str]] = []
     for m in _SESSION_RE.finditer(content):
         events.append((m.start(), "session", m.group(1)))
@@ -66,29 +92,46 @@ def find_pivot_targets(content: str) -> list[str]:
     events.sort(key=lambda e: e[0])
 
     baseline: str | None = None
-    pivots: list[str] = []
-    seen: set[str] = set()
+    current_host: str | None = None
+    hop = 0
+    pivots: list[tuple[str, int]] = []
+    seen: set[tuple[str, int]] = set()
+
     for _, kind, value in events:
         if kind == "session":
             baseline = None
+            current_host = None
+            hop = 0
             continue
         if baseline is None:
             baseline = value
+            current_host = value
+            hop = 0
             continue
-        if value != baseline and value not in seen:
-            seen.add(value)
-            pivots.append(value)
+        if value == current_host:
+            continue  # 沒變化
+        if value == baseline:
+            current_host = value
+            hop = 0
+            continue
+        hop += 1
+        current_host = value
+        key = (value, hop)
+        if key not in seen:
+            seen.add(key)
+            pivots.append(key)
     return pivots
 
 
 def ingest_out_file(store: EventStore, seat: str, content: str) -> None:
     """對一份 .out 內容跑 pivot 偵測，把新發現的目標寫進去。store 端
     ON CONFLICT DO NOTHING，同一個 (seat, target_host) 重複呼叫是安全的。"""
-    for target_host in find_pivot_targets(content):
+    for target_host, hop in find_pivot_targets(content):
+        layer = "external" if hop == 1 else "internal"
         try:
-            store.record_possible_breach(seat=seat, target_host=target_host)
+            store.record_possible_breach(seat=seat, target_host=target_host, layer=layer)
         except Exception:
-            logger.exception("failed to record possible breach: seat=%s target=%s", seat, target_host)
+            logger.exception("failed to record possible breach: seat=%s target=%s layer=%s", seat, target_host, layer)
 
 
 class BreachDetector:

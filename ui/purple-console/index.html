@@ -158,16 +158,26 @@
 
   /* 紅隊攻擊拓樸——左邊是紅隊攻擊來源（單一匿名方塊，不對應特定座位），
      右邊是靶機，每個靶機用一對方塊表示（外網／內網兩台機器，跟藍隊
-     修補格同一套 .patch-pair 元件），中間通道箭頭代表「偵測到攻擊行動
-     時，左邊打向右邊」的方向。目前沒有真實的攻擊偵測事件可以觸發，兩邊
-     都畫成未亮燈的骨架，通道也先是靜止箭頭。 */
-  .breach-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px; }
+     修補格同一套 .patch-pair 元件）。真資料見 issue #21 breach_detector.
+     py（/possible-breaches）——中間的 .attack-beam 光束跟兩邊的
+     .suspected 亮燈都是同一組疑似突破信號驅動，沒有疑似突破時維持未
+     亮燈的骨架、光束不出現，不編造。 */
+  .breach-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px; position: relative; }
   .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: center; }
   /* 直排、超過 5 個換第二欄——跟旁邊 .patch-grid（靶機格）同一種排法，
      max-height 卡在剛好 5 格的高度（5*44 + 4*8 間距），逼它換欄，不是
      等實際欄高不夠才換。 */
   .breach-grid { display: flex; flex-direction: column; flex-wrap: wrap; max-height: 252px; align-content: center; justify-content: center; align-self: center; gap: 8px; }
   .breach-cell { width: 44px; height: 44px; flex-shrink: 0; border-radius: 6px; background: var(--color-neutral-900); border: 1px solid #5c2530; }
+  /* 左邊來源格的疑似突破狀態——跟右邊靶機格的 .suspected 同一組配色語言
+     （琥珀色＋脈動），這格代表「這台紅隊來源疑似打穿了什麼」。 */
+  .breach-cell.suspected { background: linear-gradient(135deg, #7a4a1f, #ffb84d); border-color: #ffb84d; opacity: 0.85; animation: pulse 2s ease-in-out infinite; }
+  /* 紅→藍中間的光束——只在有疑似突破時出現，一顆發光小球在兩欄之間來回
+     跑，呼應「紅隊打過去」這個方向性。絕對定位、蓋在 .breach-view 中間，
+     不佔版面（不會把兩欄擠窄）。 */
+  .attack-beam { position: absolute; left: 50%; top: 50%; width: 70px; height: 0; transform: translate(-50%, -50%); pointer-events: none; }
+  .attack-beam .pulse-dot { position: absolute; top: -4px; left: -10px; width: 9px; height: 9px; border-radius: 50%; background: #ffb84d; box-shadow: 0 0 12px 4px rgba(255,184,77,0.75); animation: beam-travel 1.3s ease-in-out infinite; }
+  @keyframes beam-travel { 0% { left: -10px; opacity: 0; } 15% { opacity: 1; } 85% { opacity: 1; } 100% { left: 100%; opacity: 0; } }
 
   .timeline-head { display: flex; align-items: center; gap: 12px; flex-wrap: nowrap; }
   .timeline-title { font-size: 15px; letter-spacing: 0.1em; color: var(--color-neutral-500); white-space: nowrap; flex-shrink: 0; }
@@ -271,6 +281,7 @@
       <div class="panel-empty" id="red-empty">目前無對局中</div>
       <div class="breach-view" id="red-breach" hidden>
         <div class="clash-col"><div class="breach-grid" id="origin-grid"></div></div>
+        <div class="attack-beam" id="attack-beam" hidden><div class="pulse-dot"></div></div>
         <div class="clash-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
       <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破（終端機主機名稱偵測，未確認）</div>
@@ -334,10 +345,8 @@
   var POLL_MS = 8000;
   var API_KEY = "purple-console.api-base";
   // 靶機淪陷數方塊網格——左邊紅隊攻擊來源、右邊靶機，都匿名、不對應特定
-  // 座位/身分，純粹是「打穿了幾台」的視覺化。目前沒有真實的「攻擊成功」
-  // 事件可以驅動，先用固定格數畫出兩邊全部未亮燈的骨架；之後接上真資料
-  // 時，每來一次新的偵測事件就讓通道播一次光束、點亮右邊對應格子
-  // （.breach-cell.hit），不用重寫版面。
+  // 座位/身分，純粹是「打穿了幾台」的視覺化，真資料見 renderBreachPanel
+  // （issue #21 疑似突破偵測）。
   // 沒有任何 destination 資訊時的保底格數（見 renderBreachPanel）——
   // adapters 目前是「假設欄位名」，實際場次如果都抓不到 destination，
   // 至少讓面板看起來不是空的，不代表真實數字。
@@ -475,11 +484,12 @@
     });
   }
 
-  function fillCellGrid(hostId, count) {
+  function fillCellGrid(hostId, count, litCount) {
+    litCount = litCount || 0;
     var host = document.getElementById(hostId);
     host.innerHTML = "";
     for (var i = 0; i < count; i++) {
-      host.appendChild(el("div", "breach-cell"));
+      host.appendChild(el("div", "breach-cell" + (i < litCount ? " suspected" : "")));
     }
   }
 
@@ -487,8 +497,8 @@
   // 看到幾個不同的 destination（靶機）——靶機增加/減少，兩邊格子一起變。
   // destination 是既有欄位（adapters/store 早就在存，見 analysis.py 的
   // matching 邏輯），不用動後端。沒有任何 destination 資訊時退回保底格數，
-  // 不是真數字。點亮狀態（.hit）目前還沒有真實的「攻擊成功」事件可以
-  // 驅動，一律未亮燈。
+  // 不是真數字。點亮狀態見 renderBreachPanel 的 suspected 邏輯（issue
+  // #21，啟發式 pivot 偵測）——不是這支函式的事，這支只算格數。
   function distinctDestinationCount(correlations) {
     var seen = new Set();
     correlations.forEach(function (c) {
@@ -498,33 +508,43 @@
     return seen.size;
   }
 
-  // suspectedCount：issue #21 breach_detector.py 偵測到的相異 target_host
-  // 數量（啟發式，見 /possible-breaches）。靶機格本身沒有名字對應（格子
-  // 純粹是「有幾台不同的靶機」的計數，不是特定哪一台），所以沒辦法精準
-  // 點亮「就是那一台」，只能點亮前 N 對——跟這個面板既有的「只給數量、
-  // 不給身份」設計一致，不是新的簡化。
-  function renderBreachPanel(correlations, suspectedCount) {
+  // externalCount／internalCount：issue #21 breach_detector.py 依 pivot
+  // 深度分出的兩層（見 breach_detector.py 的 find_pivot_targets()
+  // docstring——hop=1 只可能是外網 blue-a，hop>=2 才代表已經先站上 blue-a
+  // 才碰得到的內網 blue-b，不需要解析容器名稱）。靶機格本身沒有名字對應
+  // （格子純粹是「有幾台不同的靶機」的計數，不是特定哪一台），所以沒辦法
+  // 精準點亮「就是那一台」，只能點亮前 N 對的外網／內網格——跟這個面板
+  // 既有的「只給數量、不給身份」設計一致，不是新的簡化。
+  function renderBreachPanel(correlations, externalCount, internalCount) {
     correlations = correlations || [];
-    suspectedCount = suspectedCount || 0;
+    externalCount = externalCount || 0;
+    internalCount = internalCount || 0;
     var realCount = distinctDestinationCount(correlations);
     var count = realCount || BREACH_GRID_FALLBACK;
-    fillCellGrid("origin-grid", count);
 
     // 只有真的有對局資料（realCount > 0）才疊加疑似突破——沒有真實
     // correlation 資料時 count 是保底假數字，疊上去會誤導。
-    var showSuspected = realCount > 0 && suspectedCount > 0;
-    var suspectedPairs = showSuspected ? Math.min(suspectedCount, count) : 0;
+    var showSuspected = realCount > 0 && (externalCount > 0 || internalCount > 0);
+    var suspectedExternal = showSuspected ? Math.min(externalCount, count) : 0;
+    var suspectedInternal = showSuspected ? Math.min(internalCount, count) : 0;
     document.getElementById("breach-legend").hidden = !showSuspected;
+    // 光束：呼應「紅隊打過去」的方向性，只在有疑似突破時出現，不佔版面
+    // （absolute 定位，見上面 CSS），持續跑動而不是只播一次——跟格子的
+    // 亮燈狀態一樣是「目前有沒有疑似突破」，不是逐筆事件的一次性特效。
+    document.getElementById("attack-beam").hidden = !showSuspected;
 
-    // 每個靶機是一對方塊（外網／內網），跟藍隊修補格同一套元件。
+    fillCellGrid("origin-grid", count, Math.max(suspectedExternal, suspectedInternal));
+
+    // 每個靶機是一對方塊（外網／內網），跟藍隊修補格同一套元件——前
+    // suspectedExternal 對的外網格點亮，前 suspectedInternal 對的內網格
+    // 點亮（通常 internal <= external，物理上要先站上外網才碰得到內網）。
     var targetHost = document.getElementById("target-grid");
     targetHost.innerHTML = "";
     for (var i = 0; i < count; i++) {
-      var suspected = i < suspectedPairs;
       var pair = el("div", "patch-pair");
-      pair.appendChild(patchCell(suspected));
+      pair.appendChild(patchCell(i < suspectedExternal));
       pair.appendChild(el("div", "patch-link"));
-      pair.appendChild(patchCell(suspected));
+      pair.appendChild(patchCell(i < suspectedInternal));
       targetHost.appendChild(pair);
     }
   }
@@ -550,11 +570,14 @@
       var res = await fetch(apiBase + "/possible-breaches");
       if (!res.ok) throw new Error("HTTP " + res.status);
       var breaches = await res.json();
-      var targets = new Set();
-      breaches.forEach(function (b) { targets.add(b.target_host); });
-      renderBreachPanel(correlations, targets.size);
+      var external = new Set();
+      var internal = new Set();
+      breaches.forEach(function (b) {
+        (b.layer === "internal" ? internal : external).add(b.target_host);
+      });
+      renderBreachPanel(correlations, external.size, internal.size);
     } catch (err) {
-      renderBreachPanel(correlations, 0);
+      renderBreachPanel(correlations, 0, 0);
     }
   }
 

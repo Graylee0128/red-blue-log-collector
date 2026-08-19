@@ -76,8 +76,10 @@ def blue_scores() -> list[dict[str, Any]]:
 def possible_breaches() -> list[dict[str, Any]]:
     """issue #21 的啟發式 pivot 偵測結果（breach_detector.py）——終端機
     視窗標題出現不同主機名稱的推論，不是確認過的攻擊成功事件，前端顯示
-    時要標示成疑似/未確認，不能跟 hit/gap 那種權威判定混在一起。跟
-    /blue-scores 一樣公開讀，不需要 purple clearance。"""
+    時要標示成疑似/未確認，不能跟 hit/gap 那種權威判定混在一起。layer
+    （external/internal）是從 pivot 深度推論的外網/內網，不是解析容器
+    名稱得來的（見 breach_detector.py 的說明）。跟 /blue-scores 一樣公開
+    讀，不需要 purple clearance。"""
     return store.list_possible_breaches()
 
 
