@@ -111,11 +111,10 @@
   .panel-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: 22px; color: var(--color-neutral-600); text-align: center; }
 
   /* 紅隊攻擊拓樸右側的靶機格——每個靶機一對方塊（外網／內網），用一條
-     線連著。CSS Grid + grid-auto-flow:column：一欄最多 --patch-cols 個
-     （量測出來的值，見 renderBreachPanel 的 fitCellLayout()），直的往下
-     疊，超過才往右開新欄——維持直排的形狀（面板本身窄而高），不是橫向
-     排開。 */
-  .patch-grid { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--patch-cols, 8), auto); align-content: start; justify-content: start; gap: 8px 10px; }
+     線連著。CSS Grid + grid-auto-flow:row：固定 --patch-cols 欄（目前是
+     2，見 renderBreachPanel 的 FIXED_COLS），機器數平分到每一排，超過
+     兩欄的量往下開新排——維持窄而高的直排形狀，不是橫向排開。 */
+  .patch-grid { flex: 1; min-height: 0; display: grid; grid-auto-flow: row; grid-template-columns: repeat(var(--patch-cols, 2), auto); align-content: start; justify-content: start; gap: 8px 10px; }
   .patch-pair { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
   /* 格子尺寸由 --breach-cell-size 這個 CSS 變數控制（見 renderBreachPanel
      的 fitCellLayout()——直接量測卡片可用空間反推尺寸，不是猜公式）。
@@ -194,12 +193,12 @@
      靠近紅隊一點」，同一個改動兩件事一起解決。藍隊那欄維持貼左（靠
      光束那側），理由不變——貼右邊界會溢出卡片。 */
   .clash-col-origin { justify-content: center; }
-  /* 跟右邊 .patch-grid 同一種排法：CSS Grid + grid-auto-flow:column，
-     一欄最多 --breach-cols 個（一樣上限 8），直的往下疊，超過才往右開
-     新欄。格子尺寸是動態的（見 --breach-cell-size），靠固定像素高度換
-     欄的舊算法（max-height）在格子縮小後會跟右邊對不齊，改成跟右邊
-     同一套邏輯才會維持同一種直排形狀。 */
-  .breach-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--breach-cols, 8), auto); align-content: start; justify-content: start; align-self: flex-start; gap: 8px; }
+  /* 跟右邊 .patch-grid 同一種排法：CSS Grid + grid-auto-flow:row，固定
+     --breach-cols 欄（一樣是 2），機器數平分到每一排，超過往下開新排。
+     格子尺寸是動態的（見 --breach-cell-size），靠固定像素高度換欄的舊
+     算法（max-height）在格子縮小後會跟右邊對不齊，改成跟右邊同一套
+     邏輯才會維持同一種直排形狀。 */
+  .breach-grid { display: grid; grid-auto-flow: row; grid-template-columns: repeat(var(--breach-cols, 2), auto); align-content: start; justify-content: start; align-self: flex-start; gap: 8px; }
   .breach-cell { width: var(--breach-cell-size, 44px); height: var(--breach-cell-size, 44px); flex-shrink: 0; border-radius: 6px; background: var(--color-neutral-900); border: 1px solid #5c2530; transition: background 0.4s ease, border-color 0.4s ease, width 0.3s ease, height 0.3s ease; }
   /* 對局中（不管有沒有疑似突破）全部常駐紅燈，代表「紅隊在場」——紅隊
      自己的主題色，穩定不脈動（脈動保留給紅色的警示語意，這裡只是
@@ -562,23 +561,23 @@
   var ROW_GAP = 8;
   var COL_GAP = 10;
   var PAIR_WIDTH_RATIO = 2.45; // 一對＝兩顆格子＋一條連接線（見 .patch-link 的 calc(0.45)）
-  var FIXED_ROWS = 2; // 固定兩排，不隨數量/空間變動——欄數＝ceil(count/2)，機器數平分到每欄
+  var FIXED_COLS = 2; // 固定兩欄，不隨數量/空間變動——排數＝ceil(count/2)，機器數平分到每排
 
   function fitCellLayout(count) {
     var col = document.getElementById("target-col");
     var availW = col.clientWidth || 140;
     var availH = col.clientHeight || 300;
-    var rows = FIXED_ROWS;
-    var cols = Math.ceil(count / rows);
+    var cols = FIXED_COLS;
+    var rows = Math.ceil(count / cols);
 
     for (var size = CELL_SIZE_MAX; size >= CELL_SIZE_MIN; size -= 2) {
       var neededW = cols * (size * PAIR_WIDTH_RATIO) + (cols - 1) * COL_GAP;
       var neededH = rows * size + (rows - 1) * ROW_GAP;
-      if (neededW <= availW && neededH <= availH) return { size: size, rows: rows };
+      if (neededW <= availW && neededH <= availH) return { size: size, cols: cols, rows: rows };
     }
-    // 極端情況：就算用最小格子橫向也塞不下（台數多到誇張），格子維持
-    // 最小值，排數仍然固定兩排，不再繼續縮。
-    return { size: CELL_SIZE_MIN, rows: rows };
+    // 極端情況：就算用最小格子縱向也塞不下（台數多到誇張），格子維持
+    // 最小值，欄數仍然固定兩欄，不再繼續縮。
+    return { size: CELL_SIZE_MIN, cols: cols, rows: rows };
   }
 
   // externalCount／internalCount：issue #21 breach_detector.py 依 pivot
@@ -619,18 +618,18 @@
 
     // --breach-cell-size 設在 .breach-view 上，origin-grid／target-grid
     // 兩邊的格子都靠 CSS 變數繼承拿到同一個尺寸，兩邊格子大小才會同步。
-    // --breach-cols／--patch-cols 是左右兩邊各自一欄最多幾個，兩邊用同
-    // 一組數字、同一套 grid 排法，形狀才會對得起來。
+    // --breach-cols／--patch-cols 是左右兩邊固定的欄數（2），兩邊用同一
+    // 組數字、同一套 grid 排法，形狀才會對得起來。
     var breachViewEl = document.getElementById("red-breach");
     var layout = fitCellLayout(count);
     breachViewEl.style.setProperty("--breach-cell-size", layout.size + "px");
-    breachViewEl.style.setProperty("--breach-cols", layout.rows);
-    breachViewEl.style.setProperty("--patch-cols", layout.rows);
+    breachViewEl.style.setProperty("--breach-cols", layout.cols);
+    breachViewEl.style.setProperty("--patch-cols", layout.cols);
 
     // 光束跟格子都是貼齊 .breach-view 頂端（align-items:flex-start，見
     // CSS），格子本身另外用 align-content:start 貼齊自己欄位的頂端，兩者
-    // 頂端對齊之後，光束再往下推「半個格子區塊高度」，就會落在格子直排
-    // 的正中間——算式跟著量測出來的格子尺寸/行數走，不是寫死的像素值。
+    // 頂端對齊之後，光束再往下推「半個格子區塊高度」，就會落在格子的
+    // 正中間——算式跟著量測出來的格子尺寸/實際排數走，不是寫死的像素值。
     var blockHeight = layout.rows * layout.size + (layout.rows - 1) * ROW_GAP;
     document.getElementById("attack-beam").style.marginTop = Math.round(blockHeight / 2) + "px";
 
