@@ -1,3 +1,6 @@
+import os
+from unittest.mock import patch
+
 from rbcollector.syslog_receiver import (
     blue_payload_from_syslog,
     ingest_syslog_line,
@@ -17,6 +20,10 @@ BLUE_LINE = (
 HOST_LINE = (
     '<134>1 2026-08-18T09:47:50.000000+00:00 central metis-docker-events - - '
     '[metis@1 src="/var/log/metis/docker-events.log" role="host"] {"status":"start"}'
+)
+RED_LINE_WITH_TOKEN = (
+    '<133>1 2026-08-18T09:47:26.123456+00:00 red-host-01 metis-red-cmd - - '
+    '[metis@1 src="/var/log/metis/seat/red-abc123.cmd" role="red" token="secret123"] nmap -sV 10.0.0.20'
 )
 
 
@@ -139,3 +146,46 @@ def test_ingest_syslog_line_accepts_plain_blue_fallback():
     team, _raw_payload, event = store.appended[0]
     assert team == "blue"
     assert event["message"] == "Failed password for root from 10.0.0.10"
+
+
+def test_parse_syslog_line_extracts_token():
+    parsed = parse_syslog_line(RED_LINE_WITH_TOKEN)
+    assert parsed["token"] == "secret123"
+    assert parsed["role"] == "red"
+
+
+def test_ingest_syslog_line_with_correct_token_accepts():
+    # issue #28: 驗證 token
+    store = FakeStore()
+    with patch.dict(os.environ, {"SYSLOG_TOKEN": "secret123"}):
+        ingest_syslog_line(store, RED_LINE_WITH_TOKEN)
+        assert len(store.appended) == 1
+        team, _raw_payload, _event = store.appended[0]
+        assert team == "red"
+
+
+def test_ingest_syslog_line_with_wrong_token_rejects():
+    # issue #28: 驗證 token 失敗時拒絕
+    store = FakeStore()
+    with patch.dict(os.environ, {"SYSLOG_TOKEN": "wrong-token"}):
+        ingest_syslog_line(store, RED_LINE_WITH_TOKEN)
+        assert store.appended == []
+
+
+def test_ingest_syslog_line_with_missing_token_when_required_rejects():
+    # issue #28: 需要 token 但日誌中沒有時拒絕
+    store = FakeStore()
+    with patch.dict(os.environ, {"SYSLOG_TOKEN": "secret123"}):
+        ingest_syslog_line(store, RED_LINE)  # 沒有 token 的日誌
+        assert store.appended == []
+
+
+def test_ingest_syslog_line_without_token_config_accepts_all():
+    # issue #28: 沒有設置 token 時接受所有日誌（向後兼容）
+    store = FakeStore()
+    with patch.dict(os.environ, {}, clear=True):
+        # 清除所有環境變數，模擬沒有 token 的情況
+        ingest_syslog_line(store, RED_LINE)
+        assert len(store.appended) == 1
+        ingest_syslog_line(store, RED_LINE_WITH_TOKEN)
+        assert len(store.appended) == 2

@@ -44,6 +44,7 @@ _SYSLOG_RE = re.compile(
 )
 _SD_ROLE_RE = re.compile(r'role="([^"]*)"')
 _SD_SRC_RE = re.compile(r'src="([^"]*)"')
+_SD_TOKEN_RE = re.compile(r'token="([^"]*)"')
 _IP_RE = re.compile(r"([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3})")
 _BLUE_ALERT_RE = re.compile(
     r"Failed password|Invalid user|authentication failure|Failed publickey|POSSIBLE BREAK-IN ATTEMPT"
@@ -56,20 +57,46 @@ _BLUE_ATTACKER_IP_RE = re.compile(r"from ([0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0
 _PLAIN_RE = re.compile(r"^(red|blue)\s*[:=]\s*(.+)$", re.IGNORECASE)
 
 
+def _get_syslog_token() -> str:
+    """Get syslog ingest token from environment.
+
+    Uses SYSLOG_TOKEN if set (syslog-specific), falls back to INGEST_TOKEN.
+    Empty string means no token required (permissive mode).
+    """
+    return os.environ.get("SYSLOG_TOKEN") or os.environ.get("INGEST_TOKEN") or ""
+
+
+def _verify_syslog_token(received_token: str) -> bool:
+    """Verify syslog token from structured-data against environment config.
+
+    Returns True if:
+    - No token is configured (permissive mode)
+    - Token matches the configured value
+
+    Returns False if token is missing or incorrect (secure mode).
+    """
+    expected_token = _get_syslog_token()
+    if not expected_token:
+        return True  # No token configured, allow all
+    return received_token == expected_token
+
+
 def parse_syslog_line(line: str) -> dict[str, str] | None:
-    """RFC5424 line -> {timestamp, hostname, appname, role, src, msg}, or None if unparsable."""
+    """RFC5424 line -> {timestamp, hostname, appname, role, src, token, msg}, or None if unparsable."""
     match = _SYSLOG_RE.match(line)
     if not match:
         return None
     sd = match.group("sd")
     role_match = _SD_ROLE_RE.search(sd)
     src_match = _SD_SRC_RE.search(sd)
+    token_match = _SD_TOKEN_RE.search(sd)
     return {
         "timestamp": match.group("timestamp"),
         "hostname": match.group("hostname"),
         "appname": match.group("appname"),
         "role": role_match.group(1) if role_match else "",
         "src": src_match.group(1) if src_match else "",
+        "token": token_match.group(1) if token_match else "",
         "msg": match.group("msg"),
     }
 
@@ -130,6 +157,11 @@ def ingest_syslog_line(store: EventStore, line: str) -> None:
 
     parsed = parse_syslog_line(line)
     if parsed is not None:
+        # issue #28: 驗證 syslog token（在 structured-data 中作為 token="..." 欄位）
+        if not _verify_syslog_token(parsed.get("token", "")):
+            logger.warning("syslog token verification failed: %r", line[:200])
+            return
+
         role = parsed["role"]
         if role == "red":
             adapter_normalize, team, payload = red.normalize, "red", red_payload_from_syslog(parsed)
