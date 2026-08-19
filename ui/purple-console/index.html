@@ -141,7 +141,7 @@
   /* checks 陣列還沒補滿 7 格的 padding 格（鎖定中的隱藏題，或還沒抓到
      資料）——只畫虛線框、不填色，跟真的「已檢查但 fail」（cell-idle 實
      心）區分開，不代表已經知道那格會是什麼結果。 */
-  .cell-locked { background: transparent; border: 1.5px dashed var(--color-neutral-700); }
+  .cell-locked { background: transparent; border: 3px dashed var(--color-neutral-700); }
 
   /* 困難模式：稽核覆蓋率（見 BLUE.pdf「查清：稽核覆蓋圖」）——五個稽核
      方向，查過哪塊就從暗變亮，不給對錯只給覆蓋率。目前沒有真實的
