@@ -40,7 +40,10 @@
      element.hidden 實際上不會真的隱藏它們。這條規則用 !important 保證
      hidden 屬性永遠贏，不用逐一拿掉每個 class 的 display。 */
   [hidden] { display: none !important; }
-  html, body { margin: 0; background: var(--color-bg); color: var(--color-text); }
+  /* overflow:hidden 是最終防線——fitStage() 已經會盡量把畫布縮到塞得
+     進視窗，這條只是保證就算縮放計算差個幾像素，也不會逼出頁面捲軸
+     （這頁是投影用看板，裁掉一點點總比長捲軸好）。 */
+  html, body { margin: 0; background: var(--color-bg); color: var(--color-text); overflow: hidden; }
   body {
     font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
     padding: 16px 20px 20px;
