@@ -248,6 +248,16 @@ there's no normalized_events row for those (yet); they're logged and
 skipped. `role="red"`/`role="blue"` map the same way the manual forwarders
 do, so the same correlation caveat above applies here too.
 
+**Manual testing without building a full Metis RFC5424 line**: any line
+that doesn't match Metis's format falls back to a plain `red: <message>` /
+`blue: <message>` form (case-insensitive, `:` or `=` as the separator) —
+e.g. `printf 'red: nmap -sV 10.0.0.20\n' | nc <host> 514`. No timestamp,
+hostname or correlation_id in this path (`observed_at` defaults to now,
+`source` to the adapter's own default) — it exists for poking the pipe by
+hand, not as a second real ingest format. Anything matching neither shape
+is logged as `unparsable syslog line, skipping` and dropped silently (no
+error back to the sender — TCP here has no application-level ack).
+
 ## Release
 
 Image version must match semantic versioning (semver). To publish a new version:
