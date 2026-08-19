@@ -565,7 +565,24 @@
 
   var RED_PROMPT = "red@kali-01:~$";
   var BLUE_PROMPT = "blue@soc-01:~$";
-  var RED_SHELL_LINES = 6;
+
+  // Shell 面板該顯示幾行不寫死常數——量測 .shell-body 實際能放下多少行
+  // （用 CSS 算出來的 padding/line-height/gap 反推），面板高度以後因版面
+  // 調整跟著變，這裡不用手動跟著猜一個新數字。舞台是固定 1920×1080 版面
+  // 用 CSS transform 縮放（見 fitStage()），縮放不影響量到的 px 值，所以
+  // 只要沒改版面結構，量一次就穩定，不用綁 resize 重算。
+  function shellCapacity(hostId) {
+    var host = document.getElementById(hostId);
+    var style = getComputedStyle(host);
+    var padding = parseFloat(style.paddingTop) + parseFloat(style.paddingBottom);
+    var gap = parseFloat(style.rowGap) || 0;
+    var lineHeight = parseFloat(style.lineHeight); // getComputedStyle 已解析成 px
+    var usable = host.clientHeight - padding;
+    var slot = lineHeight + gap;
+    // 扣一行給游標本身——游標每次都會多畫一行，不能佔掉一格歷史紀錄的空間。
+    var lines = Math.floor((usable + gap) / slot) - 1;
+    return Math.max(1, lines);
+  }
 
   // 用 textContent 組行，不是塞 innerHTML 字串——指令內容是紅隊在終端機
   // 打的原始文字，未經任何清洗，直接串進 HTML 字串會有 XSS 風險（這頁是
@@ -600,12 +617,37 @@
     return c;
   }
 
-  // 藍隊 Shell：cmdlog 目前刻意不轉送藍隊那份（見 logship.sh／交接筆記），
-  // 沒有真實資料模型，維持無資料的靜止狀態。
+  // 藍隊 Shell 的初始靜止狀態——畫面剛載入、第一次 /events 還沒回來前用這個
+  // 占位，跟紅隊那邊 728 行的用法一樣。舊註解說「cmdlog 刻意不轉送藍隊」已
+  // 經過期：seat_log_receiver.py（issue #16）上線後 blue-{a,b}-*.cmd 也會
+  // 被 tail 進 normalized_events，見下面 refreshBlueShell()。
   function renderIdleBlueShell() {
     var blueHost = document.getElementById("blue-shell");
     blueHost.innerHTML = "";
     blueHost.appendChild(shellLine("#62b0ff", BLUE_PROMPT, null, null, caretEl("#62b0ff")));
+  }
+
+  // 藍隊 Shell：真資料，跟 refreshRedShell 對稱——seat_log_receiver.py
+  // 把 blue-{a,b}-*.cmd 的內容正規化寫進 normalized_events 後，/events?
+  // team=blue 就查得到，不用等任何人先開新的資料源。抓不到就退回無資料
+  // 狀態，不編造內容。
+  async function refreshBlueShell(apiBase) {
+    try {
+      var res = await fetch(apiBase + "/events?team=blue&limit=5000");
+      if (!res.ok) throw new Error("HTTP " + res.status);
+      var events = await res.json();
+      var recent = events.slice(-shellCapacity("blue-shell"));
+      var host = document.getElementById("blue-shell");
+      host.innerHTML = "";
+      recent.forEach(function (e) {
+        host.appendChild(shellLine("#62b0ff", BLUE_PROMPT, fmtTime(e.observed_at), e.message || e.event_type || ""));
+      });
+      host.appendChild(shellLine("#62b0ff", BLUE_PROMPT, null, null, caretEl("#62b0ff")));
+    } catch (err) {
+      // 靜默失敗，理由同 refreshRedShell——連線狀態已經由主要的 /analysis
+      // 輪詢跟狀態列處理，這裡失敗不該讓整頁看起來掛掉。
+      renderIdleBlueShell();
+    }
   }
 
   // 紅隊 Shell：真資料——logship.sh 的 role=red 本來就會轉送每一席的
@@ -620,7 +662,7 @@
       var res = await fetch(apiBase + "/events?team=red&limit=5000");
       if (!res.ok) throw new Error("HTTP " + res.status);
       var events = await res.json();
-      var recent = events.slice(-RED_SHELL_LINES);
+      var recent = events.slice(-shellCapacity("red-shell"));
       var host = document.getElementById("red-shell");
       host.innerHTML = "";
       recent.forEach(function (e) {
@@ -699,6 +741,7 @@
       renderTimeline(buildChain(correlations));
       renderBreachPanel(correlations);
       refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
+      refreshBlueShell(apiBase); // 同上
     } catch (err) {
       setStatus("err", "連線失敗");
       errorBanner.hidden = false;

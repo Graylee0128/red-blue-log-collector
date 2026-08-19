@@ -64,7 +64,10 @@ def parse_command_line(line: str) -> dict[str, Any] | None:
 
     # Try to extract ISO timestamp at the beginning
     # Pattern: 2026-08-19T11:00:00+08:00 or similar
-    ts_match = re.match(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^']*)\s+(.+)$", line)
+    # 時區/毫秒尾段用 [^\s']* 卡在遇到空白就停，不能用 [^']*——貪婪比對搭配
+    # 後面的 \s+ 會反過來從指令內容最後一個空白切開，把指令前幾個字吃進
+    # timestamp 群組（指令是多個字詞時就會踩到，e.g. "nmap -sV 10.0.0.20"）。
+    ts_match = re.match(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[^\s']*)\s+(.+)$", line)
 
     if ts_match:
         timestamp_str, command = ts_match.groups()
@@ -101,7 +104,12 @@ def blue_payload_from_seat_log(parsed: dict[str, Any], filename: str) -> dict[st
     """Build blue team ingest payload from seat log entry."""
     payload: dict[str, Any] = {
         "message": parsed["command"],
-        "host": Path(filename).stem,  # e.g., "blue-a-monitor" from blue-a-monitor.cmd
+        # "source"，不是 "host"：這裡代表「哪個席位打的指令」，跟
+        # red_payload_from_seat_log 的 source 語意一致（誰做的）。BlueAdapter
+        # 的 source 候選欄位是 source/producer/sensor，沒有 host——原本用
+        # "host" 會被 BlueAdapter 的 destination 候選欄位撿走，變成「目標是
+        # 誰」，跟語意剛好相反，畫面上也因此看不到實際席位名稱。
+        "source": Path(filename).stem,  # e.g., "blue-a-monitor" from blue-a-monitor.cmd
     }
     if parsed.get("timestamp"):
         payload["observed_at"] = parsed["timestamp"]
