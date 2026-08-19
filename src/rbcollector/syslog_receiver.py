@@ -123,6 +123,11 @@ def ingest_syslog_line(store: EventStore, line: str) -> None:
     if not line:
         return
 
+    # 不管後面解不解析得出來，先把原始內容印出來——讓人可以直接
+    # `docker logs -f` 看到「東西真的送到了」，不用等它進資料庫或猜
+    # 格式對不對。
+    logger.info("received line: %r", line[:500])
+
     parsed = parse_syslog_line(line)
     if parsed is not None:
         role = parsed["role"]
