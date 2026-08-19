@@ -62,19 +62,11 @@
   /* 連線位址／重連／狀態／難度切換——除錯跟臨時手動切換用，不是給觀眾
      看的正式面板，隨手塞在頂部統計列尾端，樣式盡量小、不搶版面。難度
      之後要改成由入口（Metis 進場碼/URL 參數）帶進來，這個下拉只是過渡。 */
-  .controls { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; font-size: 13px; color: var(--color-neutral-500); margin-left: auto; }
-  .controls input, .controls select, .controls button {
-    font: inherit; font-size: 12px; color: var(--color-text); background: var(--color-neutral-900);
-    border: 1px solid var(--color-neutral-700); border-radius: 6px; padding: 3px 8px; cursor: pointer;
-  }
-  .controls input { cursor: text; min-width: 140px; font-family: 'JetBrains Mono', ui-monospace, monospace; }
-  .controls input:focus-visible, .controls select:focus-visible, .controls button:focus-visible {
-    outline: 2px solid var(--color-accent); outline-offset: 2px;
-  }
-  .controls .status { display: flex; align-items: center; gap: 6px; font-size: 12px; }
-  .controls .status .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-neutral-700); }
-  .controls .status .dot.ok { background: #37e08a; }
-  .controls .status .dot.err { background: #ff4d5e; }
+  /* 連線狀態燈——現場人員一眼確認有沒有連上，詳細文字放 title 提示，
+     不佔版面。灰＝尚未連線，綠＝連線中，紅＝連線失敗（見 setStatus()）。 */
+  #status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-neutral-700); margin-left: auto; flex-shrink: 0; }
+  #status-dot.ok { background: #37e08a; }
+  #status-dot.err { background: #ff4d5e; }
 
   .stage-wrap { overflow: auto; border-radius: 16px; }
   .stage {
@@ -287,21 +279,14 @@
       <div class="stat-tile"><span class="label">快速偵測</span><span class="value" id="stat-fast" style="color:#6ee7a2;">—</span></div>
       <div style="display:flex; align-items:center; gap:11.2px; font-size:20px; color:var(--color-neutral-400); white-space:nowrap;">
         <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 14px var(--color-accent); animation:pulse 2.4s ease-in-out infinite;"></span>
-        <span>更新於 <span id="stat-updated">—</span></span>
+        <span id="stat-updated">—</span>
       </div>
-      <!-- 臨時擺放——之後藍隊難度要靠入口（Metis 進場碼/URL 參數）分別
-           帶進來，不是這頁自己選；連線位址/狀態也是除錯用，不是給觀眾
-           看的正式面板，先隨手塞在統計列尾端，不特別做版面。 */-->
-      <div class="controls">
-        <select id="difficulty" title="藍隊難度（暫時手動切換，之後由入口決定）">
-          <option value="簡單">簡單</option>
-          <option value="普通" selected>普通</option>
-          <option value="困難">困難</option>
-        </select>
-        <input id="api-base" type="text" placeholder="自動偵測目前主機" spellcheck="false" title="Collector API">
-        <button type="button" id="reconnect">重新連線</button>
-        <span class="status"><span class="dot" id="status-dot"></span><span id="status-text">尚未連線</span></span>
-      </div>
+      <!-- Collector API 位址固定用 defaultApiBase() 自動偵測（跟這頁同一台
+           主機的 :8001），正式部署時 Purple Console 跟 collector 本來就在
+           同網段/同主機，不需要手動輸入位址或按重新連線——8 秒輪詢本身
+           就是自動重試。只留一顆狀態燈給現場人員一眼確認有沒有連上，
+           滑鼠移上去看詳細文字（title），不佔版面。 -->
+      <span class="status" id="status-dot" title="尚未連線"></span>
     </div>
   </div>
 
@@ -386,7 +371,6 @@
 <script>
 (function () {
   var POLL_MS = 8000;
-  var API_KEY = "purple-console.api-base";
   // 靶機淪陷數方塊網格——左邊紅隊攻擊來源、右邊靶機，都匿名、不對應特定
   // 座位/身分，純粹是「打穿了幾台」的視覺化，真資料見 renderBreachPanel
   // （issue #21 疑似突破偵測）。
@@ -395,10 +379,7 @@
   // 至少讓面板看起來不是空的，不代表真實數字。
   var BREACH_GRID_FALLBACK = 6;
 
-  var apiInput = document.getElementById("api-base");
-  var difficultySel = document.getElementById("difficulty");
   var statusDot = document.getElementById("status-dot");
-  var statusText = document.getElementById("status-text");
   var errorBanner = document.getElementById("error-banner");
   var emptyBanner = document.getElementById("empty-banner");
 
@@ -409,12 +390,14 @@
     return n;
   }
 
+  // Purple Console 跟 collector 正式部署時本來就在同一台主機/同網段，
+  // 固定用目前頁面的 hostname 接 :8001，不需要使用者手動輸入或覆寫。
   function defaultApiBase() {
     var host = window.location.hostname || "localhost";
     return "http://" + host + ":8001";
   }
 
-  apiInput.value = localStorage.getItem(API_KEY) || defaultApiBase();
+  var apiBase = defaultApiBase();
 
   function fmtTime(iso) {
     if (!iso) return "—";
@@ -711,11 +694,11 @@
     renderBreachPanel(correlations, externalSize, internalSize, hasMatch, redSeatCount);
   }
 
-  // 藍隊整體修補進度：跟藍隊組長確認過的實際題目結構——簡單/普通是原本
-  // 5 題（checker.py 的 vuln1-5），困難是 7 題（多兩題隱藏加分題）。難度
-  // 選單（isHardMode()，定義在下面）決定這裡只畫幾格，兩種難度共用同一
-  // 套元件，不再另外做「稽核覆蓋率」那套（舊版本，已證實跟實際題目結構
-  // 不符，整塊移除）。
+  // 藍隊整體修補進度：跟藍隊組長二次確認過——三個難度玩的是同一台靶機、
+  // 同樣 7 關（checker.py 的 vuln1-7，5 題公開 + 2 題隱藏加分題），
+  // checker 輸出一模一樣，難度不影響題目結構，固定 7 格，不分難度。
+  // 「稽核覆蓋率」那套（曾經以為困難模式是完全不同機制）已證實不是
+  // 目前的真實設計，整塊移除；難度下拉選單也拿掉了，不再有東西可切。
   function average(nums) {
     return nums.reduce(function (a, b) { return a + b; }, 0) / nums.length;
   }
@@ -748,8 +731,8 @@
     lastBlueSeatCount = totalSeats;
     var hasData = scores.length > 0;
     var denom = Math.max(scores.length, totalSeats) || 1;
-    var checkCount = isHardMode() ? 7 : 5; // 困難才有兩題隱藏加分題
-    var fallbackMax = isHardMode() ? 140 : 100;
+    var checkCount = 7; // 5 題公開 + 2 題隱藏加分題，三個難度都一樣
+    var fallbackMax = 140;
 
     var avgScore = hasData ? average(scores.map(function (s) { return s.total_score; })) : 0;
     var avgMax = hasData ? average(scores.map(function (s) { return s.max_score; })) : fallbackMax;
@@ -759,19 +742,16 @@
       hasData ? Math.round((avgScore / avgMax) * 100) + "%" : "0%";
 
     // 第 i 格的完成比例／計數＝checks[i] 存在且 pass 的席位數／denom
-    // （見上方 denom 說明）。簡單/普通模式下 checkCount=5，迴圈本來就
-    // 不會跑到 index 5/6，兩顆隱藏加分題完全不會出現在畫面上（不是
-    // 虛線、是直接不畫），跟困難模式共用同一段迴圈邏輯就好，不用另外
-    // 判斷。
+    // （見上方 denom 說明）。
     var passCounts = [];
     for (var idx = 0; idx < checkCount; idx++) {
       passCounts.push(scores.filter(function (s) { return s.checks[idx] && s.checks[idx].status === "pass"; }).length);
     }
 
-    // 困難模式最後兩格（隱藏加分題）0 人完成時是虛線、不填色、不疊字；
-    // 一旦有人過就變成一般格子，但疊字只顯示完成人數，不顯示分母（跟
-    // 前 5 格的 "X/N" 不同——使用者明確要求的呈現方式，不是遺漏）。
-    var HIDDEN_INDICES = isHardMode() ? [5, 6] : [];
+    // 最後兩格（隱藏加分題）0 人完成時是虛線、不填色、不疊字；一旦有人
+    // 過就變成一般格子，但疊字只顯示完成人數，不顯示分母（跟前 5 格的
+    // "X/N" 不同——使用者明確要求的呈現方式，不是遺漏）。
+    var HIDDEN_INDICES = [5, 6];
 
     var host = document.getElementById("blue-cells");
     host.innerHTML = "";
@@ -951,16 +931,7 @@
   // 「目前有沒有對局在跑」（hasMatch，來自 /analysis 的 red_actions）——
   // 有對局才顯示示意用的靜止進度條，沒有就直接講清楚「目前無對局中」，
   // 不要讓觀眾誤以為空白的清單是資料還沒載入。
-  // 難度只決定 blue-patch 面板裡要畫幾格（見 renderBlueProgress 的
-  // checkCount），不再切換成另一塊完全不同的面板——舊的「稽核覆蓋率」
-  // 是照錯誤的題目結構假設做的，已經整塊移除。難度切換不影響「有沒有
-  // 對局」，所以另外存 lastHasMatch，切換難度時重算一次可見度、並用
-  // 快取的 lastBlueScores 重畫格子，不用重新打 API。
   var lastHasMatch = false;
-
-  function isHardMode() {
-    return difficultySel.value === "困難";
-  }
 
   function updateBluePanelMode() {
     document.getElementById("blue-patch").hidden = !lastHasMatch;
@@ -982,14 +953,11 @@
   }
 
   function setStatus(state, text) {
-    statusDot.className = "dot" + (state ? " " + state : "");
-    statusText.textContent = text;
+    statusDot.className = state || "";
+    statusDot.title = text;
   }
 
   async function refresh() {
-    var apiBase = apiInput.value.trim().replace(/\/$/, "");
-    localStorage.setItem(API_KEY, apiBase);
-
     try {
       // caller 不帶、預設 public——這頁是給全場觀眾看的公開戰況板，不需要
       // purple token，後端 /analysis 本來就只會回傳 hit 列給 public caller。
@@ -1011,7 +979,6 @@
       document.getElementById("stat-fast").textContent = correlations.filter(function (c) {
         return c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
       }).length;
-      document.getElementById("stat-updated").textContent = new Date().toLocaleTimeString("zh-TW", { hour12: false });
 
       renderTimeline(buildChain(correlations));
       refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
@@ -1030,9 +997,6 @@
       errorBanner.textContent = "抓不到 " + apiBase + "/analysis：" + err.message + "（確認 API 位址、CORS）";
     }
   }
-
-  document.getElementById("reconnect").addEventListener("click", refresh);
-  difficultySel.addEventListener("change", updateBluePanelMode);
 
   // 寬高都納入計算、取較小的縮放比——保證整張 1920×1080 畫布一定完整
   // 可見，不會被裁掉；長寬比對不上視窗時，代價是上下或左右留一點空白
@@ -1066,6 +1030,15 @@
   renderBlueProgress([], 0);
   renderIdleBlueShell();
   document.getElementById("red-shell").appendChild(shellLine("#ff6b78", RED_PROMPT, null, null, caretEl("#ff6b78")));
+  // 「更新於」改成獨立即時時鐘（issue #29 item 4）：不綁 /analysis 輪詢
+  // 週期（原本 8 秒才動一次，看起來像卡住），改成每秒自己 tick，單純顯示
+  // 目前時刻，跟後面資料有沒有抓到新東西無關。
+  function tickClock() {
+    document.getElementById("stat-updated").textContent = new Date().toLocaleTimeString("zh-TW", { hour12: false });
+  }
+  tickClock();
+  setInterval(tickClock, 1000);
+
   refresh();
   setInterval(refresh, POLL_MS);
 })();
