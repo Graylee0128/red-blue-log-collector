@@ -80,6 +80,10 @@
     box-shadow: var(--shadow-md); border-radius: 14px; padding: 28px 33.6px;
     display: flex; flex-direction: column; gap: 22.4px;
     transform-origin: top left;
+    /* 固定 1920×1080 的畫布，內部任何一塊（面板文字變大、載入中狀態…）
+       撐爆自己配額時，寧可視覺上被裁掉，也不要讓 .stage-wrap 因為內容
+       溢出跑出捲軸——這頁是投影給全場看的公開看板，捲軸比裁切更糟。 */
+    overflow: hidden;
   }
 
   @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
