@@ -53,6 +53,12 @@
   a { color: var(--color-accent-300); text-decoration: none; }
   a:hover { color: var(--color-accent-200); }
 
+  /* kiosk 模式（?kiosk 網址參數）：純投影用，藏掉標題列跟控制列、body
+     padding 歸零，把整個視窗高度讓給 .stage-wrap，fitStage() 會自己
+     量到新的可用高度，不用額外改縮放邏輯。 */
+  body.kiosk { padding: 0; }
+  body.kiosk .page-head, body.kiosk .controls { display: none; }
+
   .page-head { display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
   .page-head h1 { font-size: 18px; font-weight: 600; margin: 0; letter-spacing: 0.01em; }
   .page-head .sub { font-size: 13px; color: var(--color-neutral-500); }
@@ -76,7 +82,10 @@
   .controls .status .dot.ok { background: #37e08a; }
   .controls .status .dot.err { background: #ff4d5e; }
 
-  .stage-wrap { overflow: auto; border-radius: 16px; }
+  /* margin:0 auto——縮放後 wrap 的寬度通常小於視窗，body 是 flex column
+     時多出來的空間預設全部堆在右邊，看起來像排版壞掉；置中之後兩側
+     黑邊維持對稱。 */
+  .stage-wrap { overflow: auto; border-radius: 16px; margin: 0 auto; }
   .stage {
     width: 1920px; height: 1080px; flex-shrink: 0; box-sizing: border-box;
     background: radial-gradient(90% 70% at 8% -10%, #1e2133 0%, #161826 55%, #101220 100%);
@@ -1046,17 +1055,26 @@
   // 不夠高時縮放後的畫布還是會比可視高度高，逼整個網頁（不是畫布內部）
   // 長出捲軸。用 wrap 的位置反推可用高度（視窗高度 - wrap 上緣位置 -
   // 一點底部緩衝），寬高兩個比例取較小值，兩個方向都保證塞得下。
+  // 刻意不夾在 <=1——投影機/大螢幕解析度超過 1920×1080 時，夾住只會讓
+  // 畫布維持原尺寸、周圍空出一大圈黑邊，比 transform 放大更難看。這頁
+  // 沒有蓋滿整個 stage 的持續動畫，放大造成的糊感可忽略。
   function fitStage() {
     var wrap = document.querySelector(".stage-wrap");
     var stage = document.getElementById("stage");
     var availableW = wrap.clientWidth - 4;
     var availableH = window.innerHeight - wrap.getBoundingClientRect().top - 12;
-    var scale = Math.min(1, availableW / 1920, availableH / 1080);
+    var scale = Math.min(availableW / 1920, availableH / 1080);
     stage.style.transform = "scale(" + scale + ")";
     wrap.style.width = (1920 * scale) + "px";
     wrap.style.height = (1080 * scale) + "px";
   }
   window.addEventListener("resize", fitStage);
+  // ?kiosk 網址參數：投影用，藏掉標題列跟控制列，讓 fitStage() 量到
+  // 更大的可用高度——不用另外改 fitStage() 本身，它本來就是量測
+  // wrap 的實際位置，不是寫死數字，chrome 一藏它自己會吃到新的高度。
+  if (new URLSearchParams(location.search).has("kiosk")) {
+    document.body.classList.add("kiosk");
+  }
   fitStage();
 
   renderBreachPanel([]);
