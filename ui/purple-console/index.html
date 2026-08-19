@@ -111,7 +111,7 @@
      線連著。CSS Grid + grid-auto-flow:column：一欄最多 --patch-cols 個
      （見 renderBreachPanel 的 cellSizeForCount()，上限 8），直的往下疊，
      超過才往右開新欄——維持直排的形狀（面板本身窄而高），不是橫向排開。 */
-  .patch-grid { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--patch-cols, 8), auto); align-content: start; justify-content: center; gap: 8px 10px; }
+  .patch-grid { flex: 1; min-height: 0; display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--patch-cols, 8), auto); align-content: start; justify-content: start; gap: 8px 10px; }
   .patch-pair { display: flex; align-items: center; gap: 0; flex-shrink: 0; }
   /* 格子尺寸由 --breach-cell-size 這個 CSS 變數控制（見 renderBreachPanel
      的 cellSizeForCount()）——靶機/來源數量少時格子大，數量一多就自動縮
@@ -190,7 +190,7 @@
      新欄。格子尺寸是動態的（見 --breach-cell-size），靠固定像素高度換
      欄的舊算法（max-height）在格子縮小後會跟右邊對不齊，改成跟右邊
      同一套邏輯才會維持同一種直排形狀。 */
-  .breach-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--breach-cols, 8), auto); align-content: start; justify-content: center; align-self: flex-start; gap: 8px; }
+  .breach-grid { display: grid; grid-auto-flow: column; grid-template-rows: repeat(var(--breach-cols, 8), auto); align-content: start; justify-content: start; align-self: flex-start; gap: 8px; }
   .breach-cell { width: var(--breach-cell-size, 44px); height: var(--breach-cell-size, 44px); flex-shrink: 0; border-radius: 6px; background: var(--color-neutral-900); border: 1px solid #5c2530; transition: background 0.4s ease, border-color 0.4s ease, width 0.3s ease, height 0.3s ease; }
   /* 對局中（不管有沒有疑似突破）全部常駐紅燈，代表「紅隊在場」——紅隊
      自己的主題色，穩定不脈動（脈動保留給紅色的警示語意，這裡只是
