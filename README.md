@@ -219,45 +219,6 @@ miss and everything shows up as `visibility_gap` even though detection
 happened. Check `/analysis` after a test action — if hits aren't showing up
 despite both events being on `/timeline`, this is the first thing to check.
 
-## Metis syslog receiver
-
-The forwarder scripts above are for sources that can run a script and speak
-HTTP. Metis's own log plane (`deploy/logship.sh`, 架構 §十一) doesn't --
-collection happens on the host, not in a container, and it ships over
-**rsyslog TCP**, not HTTP: `LOG_SINK=<this-collector-host>:514`.
-
-[`src/rbcollector/syslog_receiver.py`](src/rbcollector/syslog_receiver.py) is
-a small asyncio TCP server that speaks that protocol directly — it parses
-Metis's RFC5424 lines (`<PRI>1 TIMESTAMP HOSTNAME APP-NAME - - [metis@1
-src="<file>" role="<red|blue|host>"] MSG`), rebuilds the same ingest payload
-shape the manual forwarders above construct from raw log lines, and calls
-the adapters/store directly — no second network hop through the HTTP API,
-and no separate deployment: it's the same image, just a different command
-(the `syslog-receiver` service in `docker-compose.yml`).
-
-```bash
-docker compose up -d --build syslog-receiver
-```
-
-Host `:514` maps to the container's `:5140` — the container never needs
-root/`CAP_NET_BIND_SERVICE` to bind a privileged port, Docker's own port
-mapping handles that. Point Metis's `LOG_SINK` at `<this-host>:514`.
-
-`role="host"` lines (docker-events, audit) aren't red/blue team activity —
-there's no normalized_events row for those (yet); they're logged and
-skipped. `role="red"`/`role="blue"` map the same way the manual forwarders
-do, so the same correlation caveat above applies here too.
-
-**Manual testing without building a full Metis RFC5424 line**: any line
-that doesn't match Metis's format falls back to a plain `red: <message>` /
-`blue: <message>` form (case-insensitive, `:` or `=` as the separator) —
-e.g. `printf 'red: nmap -sV 10.0.0.20\n' | nc <host> 514`. No timestamp,
-hostname or correlation_id in this path (`observed_at` defaults to now,
-`source` to the adapter's own default) — it exists for poking the pipe by
-hand, not as a second real ingest format. Anything matching neither shape
-is logged as `unparsable syslog line, skipping` and dropped silently (no
-error back to the sender — TCP here has no application-level ack).
-
 ## Blue score receiver
 
 Metis's blue-team scoring (`blue/scoring-engine/checker.py`, 7 vulnerability
