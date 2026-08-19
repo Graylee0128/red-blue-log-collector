@@ -66,9 +66,21 @@ services:
 
   # Issue #22：讀 blue/scoring-engine/checker.py 產生的 leaderboard_<target>.
   # json（藍隊修補進度），一樣是「直接讀 Metis 自己的檔案」模式，不是 API。
-  # auto_watch.sh／checker.py 目前沒有被接進 Metis 的部署流程，會寫在誰手動
-  # 執行它的當下目錄——下面這個 host path 只是暫定值，還沒有標準化，部署
-  # 前務必跟實際跑 checker.py 的目錄對齊（見 issue #22 open questions）。
+  #
+  # issue #33 查證過（跟另一個 session 交叉確認）：checker.py 寫檔用
+  # out_path = f"leaderboard_{target}.json"，純相對路徑，沒有 --out/--dir
+  # 參數，實際落在誰手動執行 auto_watch.sh 當下的工作目錄——auto_watch.sh
+  # 本身也沒被接進任何部署流程/systemd unit，這個目錄 100% 取決於操作者
+  # 當天怎麼打指令，不是讀程式碼能鎖死的答案。Metis 的
+  # blue/scoring-engine/README.md 範例指令都是裸的 `python3 checker.py ...`
+  # （不是帶完整路徑），代表文件預期操作者是先 cd 進
+  # blue/scoring-engine/ 才執行，這是唯一有文件根據的猜測，也是
+  # METIS_BLUE_SCORE_HOST_DIR 預設值的來源。/var/lib/metis/blue-scores
+  # 純粹是我們這邊之前自己編的暫定值，Metis repo 裡任何地方都沒出現過。
+  #
+  # 每次部署前務必跟實際操作 checker.py 的人核對這個目錄，對不上的話這條
+  # 資料會整場收不到、且不會報錯（blue_score_receiver.py 對不存在的目錄
+  # 只記警告，不會讓服務掛掉）——沒有比對過就假設是對的最容易漏掉。
   blue-score-receiver:
     build: .
     command: ["python", "-m", "rbcollector.blue_score_receiver"]
@@ -79,7 +91,7 @@ services:
       BLUE_SCORE_POLL_INTERVAL: "5"
       LOG_LEVEL: "INFO"
     volumes:
-      - /var/lib/metis/blue-scores:/var/lib/metis/blue-scores:ro
+      - ${METIS_BLUE_SCORE_HOST_DIR:-/var/lib/metis/blue-scores}:/var/lib/metis/blue-scores:ro
       # issue #22 後續：額外讀 seat log 目錄，掃出真的存在的藍隊席位
       # （不受 auto_watch.sh 只監控 blue-a-* 的限制），跟 seat-log-receiver
       # 用同一份唯讀掛載，見 blue_score_receiver.py 的 find_blue_seat_names()。
