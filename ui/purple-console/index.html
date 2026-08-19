@@ -91,9 +91,27 @@
   .brand { display: flex; align-items: center; gap: 16.8px; }
   .brand .dot { width: 14px; height: 14px; border-radius: 50%; }
   .stat-row { margin-left: auto; display: flex; align-items: stretch; gap: 14px; }
-  .stat-tile { display: flex; flex-direction: column; gap: 4px; padding: 11.2px 22.4px; border-radius: 8px; background: var(--color-surface); box-shadow: var(--shadow-sm); min-width: 150px; }
+  .stat-tile { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 11.2px 22.4px; border-radius: 8px; background: var(--color-surface); box-shadow: var(--shadow-sm); min-width: 150px; }
   .stat-tile .label { font-size: 20px; color: var(--color-neutral-500); white-space: nowrap; }
   .stat-tile .value { font-size: 34px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+  /* issue #29 item 2：動作／偵測／快速偵測三個 tile 可點擊看明細，反應
+     時間（單一數字，沒有底層清單可列）不適用，維持不可點。 */
+  .stat-tile.clickable { cursor: pointer; }
+  .stat-tile.clickable:hover { background: var(--color-neutral-800); }
+  /* 明細卡片——position:relative 掛在被點的 tile 本身上，absolute 定位
+     用的是父層 padding box，不受 .stage 的 transform:scale 影響，不用
+     另外算縮放係數。z-index 蓋過下面的 board-row 面板。 */
+  .tile-popup { position: absolute; top: calc(100% + 8px); left: 0; z-index: 20; min-width: 220px; max-width: 320px; max-height: 260px; overflow-y: auto; background: var(--color-neutral-900); border: 1px solid var(--color-divider); border-radius: 8px; box-shadow: 0 12px 28px rgba(0,0,0,0.45); padding: 6px; cursor: default; }
+  .tile-popup, .tile-popup * { white-space: normal; }
+  .tile-popup .popup-title { font-size: 14px; color: var(--color-neutral-500); padding: 4px 8px 8px; border-bottom: 1px solid var(--color-divider); margin-bottom: 4px; }
+  .tile-popup .popup-row { display: flex; gap: 10px; padding: 5px 8px; font-size: 15px; white-space: nowrap; }
+  .tile-popup .popup-row .time { font-family: 'JetBrains Mono', ui-monospace, monospace; color: var(--color-neutral-500); flex-shrink: 0; }
+  .tile-popup .popup-row .type { overflow: hidden; text-overflow: ellipsis; }
+  .tile-popup .popup-empty { padding: 8px; font-size: 14px; color: var(--color-neutral-500); }
+  .tile-popup { scrollbar-width: thin; scrollbar-color: var(--color-neutral-700) transparent; }
+  .tile-popup::-webkit-scrollbar { width: 8px; }
+  .tile-popup::-webkit-scrollbar-track { background: transparent; }
+  .tile-popup::-webkit-scrollbar-thumb { background: var(--color-neutral-700); border-radius: 8px; }
 
   .empty-banner { display: flex; align-items: center; gap: 16.8px; padding: 11.2px 22.4px; border-radius: 8px; background: var(--color-accent-900); border: 1px solid var(--color-accent-700); font-size: 22px; color: var(--color-accent-200); flex-shrink: 0; }
   .error-banner { display: flex; align-items: center; gap: 16.8px; padding: 11.2px 22.4px; border-radius: 8px; background: #3a1620; border: 1px solid #ff4d5e; font-size: 20px; color: #ff9aa4; flex-shrink: 0; }
@@ -229,6 +247,15 @@
      留暈染空間——overflow:auto 會直接裁掉伸出容器邊界的視覺效果，沒有
      這點留白，第一列的光暈上緣會被切平。 */
   .timeline-rows { display: flex; flex-direction: column; min-height: 0; overflow: auto; padding-top: 8px; }
+  /* 深色主題滾輪，取代瀏覽器預設的亮色滾輪（含上下箭頭按鈕），跟整頁色調
+     一致——Firefox 用 scrollbar-width/scrollbar-color，Chromium 系（含投影
+     用的瀏覽器多半是這類）用 ::-webkit-scrollbar。.stage-wrap 是外層容器，
+     視窗比例跟畫布不合時也可能出現捲軸，一併套用同一套樣式。 */
+  .timeline-rows, .stage-wrap { scrollbar-width: thin; scrollbar-color: var(--color-neutral-700) transparent; }
+  .timeline-rows::-webkit-scrollbar, .stage-wrap::-webkit-scrollbar { width: 8px; height: 8px; }
+  .timeline-rows::-webkit-scrollbar-track, .stage-wrap::-webkit-scrollbar-track { background: transparent; }
+  .timeline-rows::-webkit-scrollbar-thumb, .stage-wrap::-webkit-scrollbar-thumb { background: var(--color-neutral-700); border-radius: 8px; }
+  .timeline-rows::-webkit-scrollbar-thumb:hover, .stage-wrap::-webkit-scrollbar-thumb:hover { background: var(--color-neutral-600); }
   .t-row { display: grid; grid-template-columns: 92px minmax(0, 1fr) 132px minmax(0, 1fr) 96px; gap: 14px; align-items: center; padding: 4px 8px; border-radius: 6px; border-bottom: 1px solid var(--color-divider); white-space: nowrap; }
   /* 危險度高的攻擊——box-shadow 疊一圈亮框＋外散光，不用 border 是為了
      不影響格線寬度計算（跟其他列的 padding/寬度保持一致）。severity 是
@@ -237,9 +264,15 @@
      跟沒有亮框的列完全一樣，不會因為有沒有 severity-high 而位移。 */
   .t-row .who.severity-high { padding: 3px 8px; margin: -3px -8px; border-radius: 8px; box-shadow: 0 0 0 1px #fff6d1, 0 0 10px rgba(255,246,209,0.55); }
   .t-row .time { font-family: 'JetBrains Mono', ui-monospace, monospace; font-size: 15px; color: var(--color-neutral-500); }
-  .t-row .who { display: flex; align-items: center; gap: 11.2px; overflow: hidden; }
+  /* 每則通知兩行：上面是類型標籤（原本就有），下面新增紅/藍隊原始輸出
+     內容（issue 使用者要求加回來）。.raw 的 padding-left 對齊 label——
+     跟 dot 寬度(12px) + gap(11.2px) 相加，讓文字對齊在標籤正下方，不是
+     對齊到最左邊的圓點。 */
+  .t-row .who { display: flex; flex-direction: column; gap: 2px; overflow: hidden; padding-block: 2px; }
+  .t-row .who-main { display: flex; align-items: center; gap: 11.2px; overflow: hidden; }
   .t-row .who .dot { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
-  .t-row .who .label { font-size: 21px; overflow: hidden; text-overflow: ellipsis; }
+  .t-row .who .label { font-size: 21px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .t-row .who .raw { font-size: 14px; color: var(--color-neutral-500); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding-left: 23.2px; }
   .t-row .bar { height: 3px; }
   .t-row .dash { height: 0; border-top: 2px dashed #ff4d5e; opacity: 0.7; }
   .t-row .miss { display: flex; align-items: center; gap: 11.2px; }
@@ -273,10 +306,10 @@
       <span class="dot" style="background:#4da6ff; box-shadow:0 0 22px rgba(77,166,255,0.55);"></span>
     </div>
     <div class="stat-row">
-      <div class="stat-tile"><span class="label">動作</span><span class="value" id="stat-actions">—</span></div>
-      <div class="stat-tile"><span class="label">偵測</span><span class="value" id="stat-detected">—</span></div>
+      <div class="stat-tile clickable" id="tile-actions" data-metric="actions"><span class="label">動作</span><span class="value" id="stat-actions">—</span></div>
+      <div class="stat-tile clickable" id="tile-detected" data-metric="detected"><span class="label">偵測</span><span class="value" id="stat-detected">—</span></div>
+      <div class="stat-tile clickable" id="tile-fast" data-metric="fast"><span class="label">快速偵測</span><span class="value" id="stat-fast" style="color:#6ee7a2;">—</span></div>
       <div class="stat-tile"><span class="label">反應時間</span><span class="value" id="stat-mttd">—</span></div>
-      <div class="stat-tile"><span class="label">快速偵測</span><span class="value" id="stat-fast" style="color:#6ee7a2;">—</span></div>
       <div style="display:flex; align-items:center; gap:11.2px; font-size:20px; color:var(--color-neutral-400); white-space:nowrap;">
         <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 14px var(--color-accent); animation:pulse 2.4s ease-in-out infinite;"></span>
         <span id="stat-updated">—</span>
@@ -463,7 +496,11 @@
   //
   // issue #20 時間軸雜訊過濾：只顯示有真實檢測結果的事件（c.status === "hit"）。
   // 不用 technique 過濾——technique 只是 11 條規則的標籤，沒命中規則
-  // 但確實被偵測到的攻擊會被誤隱。此層只過濾顯示，不影響 red_actions 統計。
+  // 但確實被偵測到的攻擊會被誤隱。
+  //
+  // issue #29 item 1：這裡的過濾結果同時也是「動作」統計 tile 的口徑
+  // （見 refresh() 裡直接用 chain.length，不再用伺服器端的 red_actions），
+  // 時間軸顯示筆數跟頂欄數字保證一致，不會分開算到分岔。
   function buildChain(correlations) {
     return correlations.slice().reverse().filter(function (c) {
       // 只顯示真實檢測到的攻擊（status === "hit"）
@@ -475,7 +512,9 @@
       return {
         time: fmtTime(c.red ? c.red.observed_at : null),
         redLabel: typeLabel(c.red, c.technique) || "(unclassified)",
+        redMessage: c.red ? c.red.message : null,
         blueLabel: missed ? null : typeLabel(c.blue, null),
+        blueMessage: missed ? null : (c.blue ? c.blue.message : null),
         missed: missed,
         fast: fast,
         slow: slow,
@@ -491,13 +530,28 @@
     return b;
   }
 
+  // 類型標籤（第一行，白名單翻譯字串，維持原本 innerHTML 組法）+ 原始
+  // 輸出內容（第二行）的儲存格。第二行是紅隊在終端機打的原始指令／藍隊
+  // 原始日誌訊息，未經任何清洗，一律用 textContent 塞，不能跟第一行一樣
+  // 用字串接 innerHTML——這頁是投影給全場看的公開頁面，攻擊者打的字直接
+  // 進 HTML 會有 XSS 風險（跟 Red/Blue Shell 的 shellLine() 同一個理由）。
+  function whoCell(dotColor, glowColor, label, rawMessage, severityHigh) {
+    var cell = el("span", "who" + (severityHigh ? " severity-high" : ""));
+    cell.appendChild(el("span", "who-main", '<span class="dot" style="background:' + dotColor + '; box-shadow:0 0 12px ' + glowColor + ';"></span><span class="label">' + label + "</span>"));
+    var raw = document.createElement("span");
+    raw.className = "raw";
+    raw.textContent = rawMessage || "";
+    cell.appendChild(raw);
+    return cell;
+  }
+
   function renderTimeline(chain) {
     var host = document.getElementById("timeline-rows");
     host.innerHTML = "";
     chain.forEach(function (item) {
       var row = el("div", "t-row");
       row.appendChild(el("span", "time", item.time));
-      row.appendChild(el("span", "who" + (item.severityHigh ? " severity-high" : ""), '<span class="dot" style="background:#ff4d5e; box-shadow:0 0 12px rgba(255,77,94,0.6);"></span><span class="label">' + item.redLabel + "</span>"));
+      row.appendChild(whoCell("#ff4d5e", "rgba(255,77,94,0.6)", item.redLabel, item.redMessage, item.severityHigh));
       if (item.fast) {
         row.appendChild(bar("#37e08a"));
       } else if (item.slow) {
@@ -508,7 +562,7 @@
       if (item.missed) {
         row.appendChild(el("span", "miss", '<span class="ring"></span><span class="txt">未被偵測</span>'));
       } else if (item.blueLabel) {
-        row.appendChild(el("span", "who", '<span class="dot" style="background:#4da6ff; box-shadow:0 0 12px rgba(77,166,255,0.6);"></span><span class="label">' + item.blueLabel + "</span>"));
+        row.appendChild(whoCell("#4da6ff", "rgba(77,166,255,0.6)", item.blueLabel, item.blueMessage, false));
       } else {
         row.appendChild(el("span", ""));
       }
@@ -516,6 +570,87 @@
       host.appendChild(row);
     });
   }
+
+  // issue #29 item 2：動作／偵測／快速偵測三個 tile 點擊看明細（精簡版：
+  // 只列時間+類型），用這次輪詢已經算好的 chain，不額外打 API。「動作」
+  // 「偵測」目前口徑相同（都是 buildChain 過濾後的 hit 清單，見 item 1
+  // 的註解），共用同一份清單；「快速偵測」是其中 latency < 30 秒的子集。
+  var lastChain = [];
+  var openTileMetric = null;
+
+  var METRIC_TITLES = { actions: "動作", detected: "偵測", fast: "快速偵測" };
+
+  function metricList(metric) {
+    if (metric === "fast") {
+      return lastChain.filter(function (item) { return item.fast; });
+    }
+    return lastChain;
+  }
+
+  function closeTilePopup() {
+    var existing = document.querySelector(".tile-popup");
+    if (existing) existing.remove();
+    openTileMetric = null;
+  }
+
+  function renderTilePopup(metric, anchorEl) {
+    var items = metricList(metric);
+    var popup = el("div", "tile-popup");
+    popup.appendChild(el("div", "popup-title", METRIC_TITLES[metric] + "・" + items.length + " 筆"));
+    if (items.length === 0) {
+      popup.appendChild(el("div", "popup-empty", "目前沒有資料"));
+    } else {
+      items.forEach(function (item) {
+        var row = el("div", "popup-row");
+        var t = document.createElement("span");
+        t.className = "time";
+        t.textContent = item.time;
+        row.appendChild(t);
+        var ty = document.createElement("span");
+        ty.className = "type";
+        ty.textContent = item.redLabel;
+        row.appendChild(ty);
+        popup.appendChild(row);
+      });
+    }
+    anchorEl.appendChild(popup);
+  }
+
+  function toggleTilePopup(metric, anchorEl) {
+    if (openTileMetric === metric) {
+      closeTilePopup();
+      return;
+    }
+    closeTilePopup();
+    renderTilePopup(metric, anchorEl);
+    openTileMetric = metric;
+  }
+
+  // 每輪 /analysis 抓到新資料時，如果明細卡片還開著，就地重繪內容，
+  // 不然卡片會停在上一輪的舊清單，跟頁面其他地方（時間軸、tile 數字）
+  // 對不上。
+  function refreshOpenTilePopup() {
+    if (!openTileMetric) return;
+    var metric = openTileMetric;
+    var anchor = document.getElementById("tile-" + metric);
+    closeTilePopup();
+    renderTilePopup(metric, anchor);
+    openTileMetric = metric;
+  }
+
+  ["tile-actions", "tile-detected", "tile-fast"].forEach(function (id) {
+    var tile = document.getElementById(id);
+    tile.addEventListener("click", function (evt) {
+      evt.stopPropagation();
+      toggleTilePopup(tile.dataset.metric, tile);
+    });
+  });
+
+  document.addEventListener("click", function (evt) {
+    var popup = document.querySelector(".tile-popup");
+    if (popup && popup.contains(evt.target)) return;
+    closeTilePopup();
+  });
 
   // active：全部格子一起亮或一起暗（不是逐格點亮），紅隊來源格代表的是
   // 「紅隊在場」，不是個別攻擊行動的計數，跟靶機格那種逐格點亮語意不同。
@@ -973,14 +1108,22 @@
       emptyBanner.hidden = hasData;
       setPanelState(hasData);
 
-      document.getElementById("stat-actions").textContent = data.red_actions ?? "—";
+      // issue #29 item 1：「動作」改直接算 buildChain() 過濾後的筆數，
+      // 不再用 data.red_actions（伺服器端全量，含時間軸不顯示的 gap）——
+      // 兩處口徑分開算很容易之後改了 buildChain 卻忘記同步這裡，改成
+      // 共用同一份 chain 從根本上避免對不上。
+      var chain = buildChain(correlations);
+      lastChain = chain; // 給 tile 明細卡片（issue #29 item 2）用，同一份資料，不重打 API
+      document.getElementById("stat-actions").textContent = chain.length;
       document.getElementById("stat-detected").textContent = hasData ? (data.detected + " / " + data.red_actions) : "—";
-      document.getElementById("stat-mttd").textContent = fmtMttd(data.mttd_p50_ms);
-      document.getElementById("stat-fast").textContent = correlations.filter(function (c) {
-        return c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
+      document.getElementById("stat-fast").textContent = chain.filter(function (item) {
+        return item.fast;
       }).length;
+      document.getElementById("stat-mttd").textContent = fmtMttd(data.mttd_p50_ms);
 
-      renderTimeline(buildChain(correlations));
+      renderTimeline(chain);
+      refreshOpenTilePopup(); // 卡片還開著就跟著這輪資料重繪，不留舊清單
+
       refreshRedShell(apiBase); // 獨立的 fetch，失敗不影響上面主要流程
       refreshBlueShell(apiBase); // 同上
       // refreshBreachPanel 會讀 lastBlueScores／lastBlueSeatCount（藍隊
