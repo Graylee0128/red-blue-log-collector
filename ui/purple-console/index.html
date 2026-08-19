@@ -544,21 +544,6 @@
     }
   }
 
-  // 左邊紅隊攻擊來源格、右邊靶機格，格數同步，等於目前 correlations 裡
-  // 看到幾個不同的 destination（靶機）——靶機增加/減少，兩邊格子一起變。
-  // destination 是既有欄位（adapters/store 早就在存，見 analysis.py 的
-  // matching 邏輯），不用動後端。沒有任何 destination 資訊時退回保底格數，
-  // 不是真數字。點亮狀態見 renderBreachPanel 的 suspected 邏輯（issue
-  // #21，啟發式 pivot 偵測）——不是這支函式的事，這支只算格數。
-  function distinctDestinationCount(correlations) {
-    var seen = new Set();
-    correlations.forEach(function (c) {
-      var dest = c.red && c.red.destination;
-      if (dest) seen.add(dest);
-    });
-    return seen.size;
-  }
-
   // 格子大小/每欄幾個不是猜公式算出來的——之前用固定公式（數量對照表）
   // 挑尺寸，數量一多、要排好幾欄時算出來的寬度還是會超出卡片，因為公式
   // 完全不知道卡片實際多寬。改成直接量測「藍隊那欄」（.patch-cell 比
@@ -601,7 +586,13 @@
     externalCount = externalCount || 0;
     internalCount = internalCount || 0;
     hasMatch = !!hasMatch;
-    var realCount = distinctDestinationCount(correlations);
+    // 總靶機數改用 /blue-scores 的席位數（lastBlueScores，藍隊修補進度
+    // 面板快取的同一份資料，見下面 renderBlueProgress）——舊版用
+    // distinctDestinationCount(correlations) 只算紅隊「已經打過」的
+    // destination，演練剛開始、紅隊還沒出手時永遠是 0，格子看起來一直
+    // 是空的。藍隊席位數代表「場上實際有幾個目標」，不看紅隊打過沒，
+    // 更準確反映真實靶機數量。
+    var realCount = lastBlueScores.length;
     var count = realCount || BREACH_GRID_FALLBACK;
 
     // 只有真的有對局資料（realCount > 0）才疊加疑似突破——沒有真實
