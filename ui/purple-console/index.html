@@ -176,11 +176,12 @@
      亮燈的骨架、光束不出現，不編造。 */
   .breach-view { flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; gap: 10px; position: relative; }
   .clash-col { flex: 1; min-width: 0; align-self: stretch; display: flex; justify-content: center; }
-  /* 直排、超過 5 個換第二欄——跟旁邊 .patch-grid（靶機格）同一種排法，
-     max-height 卡在剛好 5 格的高度（5*44 + 4*8 間距），逼它換欄，不是
-     等實際欄高不夠才換。 */
-  .breach-grid { display: flex; flex-direction: column; flex-wrap: wrap; max-height: 252px; align-content: center; justify-content: center; align-self: center; gap: 8px; }
-  .breach-cell { width: 44px; height: 44px; flex-shrink: 0; border-radius: 6px; background: var(--color-neutral-900); border: 1px solid #5c2530; transition: background 0.4s ease, border-color 0.4s ease; }
+  /* 跟右邊 .patch-grid 同一種排法：CSS Grid、固定欄數（--breach-cols，
+     一樣上限 8），超過自動換下一排。格子尺寸是動態的（見
+     --breach-cell-size），靠固定像素高度換欄的舊算法（max-height）在
+     格子縮小後會跟右邊對不齊，改成跟右邊同一套邏輯才會維持同一種形狀。 */
+  .breach-grid { display: grid; grid-template-columns: repeat(var(--breach-cols, 8), auto); align-content: center; justify-content: center; align-self: center; gap: 8px; }
+  .breach-cell { width: var(--breach-cell-size, 44px); height: var(--breach-cell-size, 44px); flex-shrink: 0; border-radius: 6px; background: var(--color-neutral-900); border: 1px solid #5c2530; transition: background 0.4s ease, border-color 0.4s ease, width 0.3s ease, height 0.3s ease; }
   /* 對局中（不管有沒有疑似突破）全部常駐紅燈，代表「紅隊在場」——紅隊
      自己的主題色，穩定不脈動（脈動保留給紅色的警示語意，這裡只是
      「有人在」的狀態燈）。 */
@@ -558,10 +559,11 @@
 
     // --breach-cell-size 設在 .breach-view 上，origin-grid／target-grid
     // 兩邊的格子都靠 CSS 變數繼承拿到同一個尺寸，兩邊格子大小才會同步。
-    // --patch-cols 是靶機格一排最多幾個（上限 8），見 .patch-grid 的
-    // grid-template-columns。
+    // --breach-cols／--patch-cols 是左右兩邊各自一排最多幾個（都是上限
+    // 8），兩邊用同一套 grid 排法，形狀才會對得起來。
     var breachViewEl = document.getElementById("red-breach");
     breachViewEl.style.setProperty("--breach-cell-size", cellSizeForCount(count) + "px");
+    breachViewEl.style.setProperty("--breach-cols", Math.min(count, PATCH_COLS_MAX));
     breachViewEl.style.setProperty("--patch-cols", Math.min(count, PATCH_COLS_MAX));
 
     // 只有真的有對局資料（realCount > 0）才疊加疑似突破——沒有真實
