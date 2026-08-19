@@ -61,6 +61,15 @@ CREATE TABLE IF NOT EXISTS possible_breaches (
   observed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   UNIQUE (seat, target_host)
 );
+-- 藍隊席位「存在」清單（issue #22 後續）——跟 blue_scores 分開存：
+-- blue_scores 只有 checker.py 真的在跑、有回報分數的席位（目前已知
+-- auto_watch.sh 只監控 blue-a-*，blue-b-* 完全不會出現在 blue_scores
+-- 裡），這張表是從 seat log 目錄的檔案存在與否判斷「席位真的存在」，
+-- 不受計分有沒有涵蓋到影響，讓前端的分母算得準。
+CREATE TABLE IF NOT EXISTS blue_seats (
+  seat TEXT PRIMARY KEY,
+  first_seen TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 """
 
 
@@ -217,6 +226,23 @@ class EventStore:
             {"seat": seat, "target_host": target_host, "layer": layer, "observed_at": observed_at.isoformat()}
             for seat, target_host, layer, observed_at in rows
         ]
+
+    def record_known_blue_seat(self, *, seat: str) -> bool:
+        """記一個「這個藍隊席位真的存在」——只留第一次看到的時間，冪等。
+        跟 upsert_blue_score 不同，這裡沒有分數可更新，看到過一次就永遠
+        算數（席位不會無緣無故消失）。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "INSERT INTO blue_seats (seat) VALUES (%s) ON CONFLICT (seat) DO NOTHING RETURNING seat",
+                (seat,),
+            ).fetchone()
+            conn.commit()
+            return row is not None
+
+    def list_known_blue_seats(self) -> list[str]:
+        with self._connect() as conn:
+            rows = conn.execute("SELECT seat FROM blue_seats ORDER BY seat").fetchall()
+        return [seat for (seat,) in rows]
 
     def list_events(self, team: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 5000))

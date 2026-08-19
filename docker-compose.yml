@@ -75,10 +75,15 @@ services:
     environment:
       DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
       BLUE_SCORE_DIR: "/var/lib/metis/blue-scores"
+      SEAT_LOG_DIR: "/var/log/metis/seat"
       BLUE_SCORE_POLL_INTERVAL: "5"
       LOG_LEVEL: "INFO"
     volumes:
       - /var/lib/metis/blue-scores:/var/lib/metis/blue-scores:ro
+      # issue #22 後續：額外讀 seat log 目錄，掃出真的存在的藍隊席位
+      # （不受 auto_watch.sh 只監控 blue-a-* 的限制），跟 seat-log-receiver
+      # 用同一份唯讀掛載，見 blue_score_receiver.py 的 find_blue_seat_names()。
+      - /var/log/metis/seat:/var/log/metis/seat:ro
     depends_on:
       postgres:
         condition: service_healthy

@@ -586,13 +586,14 @@
     externalCount = externalCount || 0;
     internalCount = internalCount || 0;
     hasMatch = !!hasMatch;
-    // 總靶機數改用 /blue-scores 的席位數（lastBlueScores，藍隊修補進度
-    // 面板快取的同一份資料，見下面 renderBlueProgress）——舊版用
-    // distinctDestinationCount(correlations) 只算紅隊「已經打過」的
-    // destination，演練剛開始、紅隊還沒出手時永遠是 0，格子看起來一直
-    // 是空的。藍隊席位數代表「場上實際有幾個目標」，不看紅隊打過沒，
-    // 更準確反映真實靶機數量。
-    var realCount = lastBlueScores.length;
+    // 總靶機數改用藍隊席位數（藍隊修補進度面板快取的同一份資料，見下面
+    // renderBlueProgress）——舊版用 distinctDestinationCount(correlations)
+    // 只算紅隊「已經打過」的 destination，演練剛開始、紅隊還沒出手時
+    // 永遠是 0，格子看起來一直是空的。lastBlueSeatCount（/blue-seats，
+    // 掃 seat log 目錄）比 lastBlueScores.length（/blue-scores，只有真的
+    // 回報分數的席位）更準——同樣是 auto_watch.sh 沒涵蓋 blue-b-* 的
+    // 已知限制，取兩者較大值兜底。
+    var realCount = Math.max(lastBlueScores.length, lastBlueSeatCount);
     var count = realCount || BREACH_GRID_FALLBACK;
 
     // 只有真的有對局資料（realCount > 0）才疊加疑似突破——沒有真實
@@ -699,6 +700,7 @@
   // 變），但不想為了切換難度多打一次 API，所以快取起來給 renderBlueProgress
   // 重複使用。
   var lastBlueScores = [];
+  var lastBlueSeatCount = 0;
 
   // scores 是 /blue-scores 回傳的整批席位清單（每個席位一筆 {total_score,
   // max_score, checks}）。這面板刻意設計成不用人操作，多席位時只顯示
@@ -707,10 +709,21 @@
   // 沒解鎖時，各自 max_score 是 100 或 140，取平均才不會失真）。每一格
   // 代表「這一關」，填色高度＝過這關的席位數／總席位數（見上面 CSS 的
   // .cell-fill 註解）——是連續的完成比例，不是某一個席位的 pass/fail。
-  function renderBlueProgress(scores) {
+  //
+  // totalSeats 是 /blue-seats 掃出來、真的存在的席位數（見 issue #22
+  // 後續討論）——跟 scores.length 分開算：scores 只有 checker.py 真的
+  // 有回報分數的席位（目前已知 auto_watch.sh 沒涵蓋 blue-b-*，那些席位
+  // 完全不會出現在 scores 裡），分母只用 scores.length 會比實際席位數
+  // 少。分母＝兩者取大，分子（passCounts、平均分數）維持只算有分數的
+  // 席位——沒分數的席位沒有「pass 或 fail」可言，硬算成 fail 或拉進
+  // 平均分數都是編造，只讓分母反映真實席位數就好。
+  function renderBlueProgress(scores, totalSeats) {
     scores = scores || [];
+    totalSeats = totalSeats || 0;
     lastBlueScores = scores;
+    lastBlueSeatCount = totalSeats;
     var hasData = scores.length > 0;
+    var denom = Math.max(scores.length, totalSeats) || 1;
     var checkCount = isHardMode() ? 7 : 5; // 困難才有兩題隱藏加分題
     var fallbackMax = isHardMode() ? 140 : 100;
 
@@ -721,10 +734,11 @@
     document.getElementById("blue-score-fill").style.width =
       hasData ? Math.round((avgScore / avgMax) * 100) + "%" : "0%";
 
-    // 第 i 格的完成比例／計數＝checks[i] 存在且 pass 的席位數／總席位數。
-    // 簡單/普通模式下 checkCount=5，迴圈本來就不會跑到 index 5/6，兩顆
-    // 隱藏加分題完全不會出現在畫面上（不是虛線、是直接不畫），跟困難
-    // 模式共用同一段迴圈邏輯就好，不用另外判斷。
+    // 第 i 格的完成比例／計數＝checks[i] 存在且 pass 的席位數／denom
+    // （見上方 denom 說明）。簡單/普通模式下 checkCount=5，迴圈本來就
+    // 不會跑到 index 5/6，兩顆隱藏加分題完全不會出現在畫面上（不是
+    // 虛線、是直接不畫），跟困難模式共用同一段迴圈邏輯就好，不用另外
+    // 判斷。
     var passCounts = [];
     for (var idx = 0; idx < checkCount; idx++) {
       passCounts.push(scores.filter(function (s) { return s.checks[idx] && s.checks[idx].status === "pass"; }).length);
@@ -753,13 +767,13 @@
 
         var cell = el("div", "cell");
         var fill = el("div", "cell-fill");
-        var ratio = hasData ? count / scores.length : 0;
+        var ratio = hasData ? count / denom : 0;
         fill.style.height = Math.round(ratio * 100) + "%";
         cell.appendChild(fill);
         // 沒資料時不疊字（跟填色一樣維持空白，不編造 0/0）。
         if (hasData) {
           var countEl = el("div", "cell-count");
-          countEl.textContent = isHidden ? String(count) : count + "/" + scores.length;
+          countEl.textContent = isHidden ? String(count) : count + "/" + denom;
           cell.appendChild(countEl);
         }
         row.appendChild(cell);
@@ -769,17 +783,29 @@
   }
 
   // 全隊平均，前端算——/blue-scores 回傳的是「每個席位」清單，聚合成
-  // 單一數字才符合「面板不用人操作、只看得到全隊」的要求（見上）。抓
-  // 不到就退回無資料狀態，不編造分數。
+  // 單一數字才符合「面板不用人操作、只看得到全隊」的要求（見上）。
+  // /blue-seats 是額外的席位數來源（見 renderBlueProgress 的 totalSeats
+  // 說明），失敗就當 0，不影響分數本身。都抓不到就退回無資料狀態，
+  // 不編造分數。
   async function refreshBlueProgress(apiBase) {
+    var scores = [];
     try {
       var res = await fetch(apiBase + "/blue-scores");
       if (!res.ok) throw new Error("HTTP " + res.status);
-      var scores = await res.json();
-      renderBlueProgress(scores);
+      scores = await res.json();
     } catch (err) {
-      renderBlueProgress([]);
+      scores = [];
     }
+    var totalSeats = 0;
+    try {
+      var seatRes = await fetch(apiBase + "/blue-seats");
+      if (!seatRes.ok) throw new Error("HTTP " + seatRes.status);
+      var seats = await seatRes.json();
+      totalSeats = seats.length;
+    } catch (err) {
+      totalSeats = 0; // 抓不到就退回只用 scores.length 當分母，不影響分數本身
+    }
+    renderBlueProgress(scores, totalSeats);
   }
 
   var RED_PROMPT = "red@kali-01:~$";
@@ -914,7 +940,7 @@
 
   function updateBluePanelMode() {
     document.getElementById("blue-patch").hidden = !lastHasMatch;
-    renderBlueProgress(lastBlueScores);
+    renderBlueProgress(lastBlueScores, lastBlueSeatCount);
   }
 
   function setPanelState(hasMatch) {
@@ -985,7 +1011,7 @@
   fitStage();
 
   renderBreachPanel([]);
-  renderBlueProgress([]);
+  renderBlueProgress([], 0);
   renderIdleBlueShell();
   document.getElementById("red-shell").appendChild(shellLine("#ff6b78", RED_PROMPT, null, null, caretEl("#ff6b78")));
   refresh();

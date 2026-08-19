@@ -72,6 +72,16 @@ def blue_scores() -> list[dict[str, Any]]:
     return store.list_blue_scores()
 
 
+@app.get("/blue-seats")
+def blue_seats() -> list[str]:
+    """從 seat log 目錄掃出來、確認真的存在的藍隊席位名稱（issue #22 後續）
+    ——刻意跟 /blue-scores 分開：checker.py／auto_watch.sh 目前只監控
+    blue-a-*，blue-b-* 完全不會出現在 /blue-scores 裡，用 /blue-scores
+    的筆數當「總席位數」的分母會少算。這支只看檔案存不存在，不看有沒有
+    計分，前端拿來對「目前總共有幾個藍隊席位」比較準。"""
+    return store.list_known_blue_seats()
+
+
 @app.get("/possible-breaches")
 def possible_breaches() -> list[dict[str, Any]]:
     """issue #21 的啟發式 pivot 偵測結果（breach_detector.py）——終端機
