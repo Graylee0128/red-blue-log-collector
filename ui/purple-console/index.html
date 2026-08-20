@@ -68,7 +68,7 @@
   #status-dot.ok { background: #37e08a; }
   #status-dot.err { background: #ff4d5e; }
 
-  .stage-wrap { overflow: auto; border-radius: 16px; }
+  .stage-wrap { overflow: hidden; border-radius: 16px; }
   .stage {
     width: 1920px; height: 1080px; flex-shrink: 0; box-sizing: border-box;
     background: radial-gradient(90% 70% at 8% -10%, #1e2133 0%, #161826 55%, #101220 100%);
@@ -542,12 +542,58 @@
     });
   }
 
+  // issue #20 原始的雜訊判斷（純數字／同一字元重複 >=3 次），跟
+  // seat_log_receiver.py 的 is_noise() 同一套規則，只是搬到顯示層——
+  // 資料庫繼續完整存（稽核用），只在時間軸這層擋掉明顯雜訊。抓不到
+  // 打字被截斷/重複送出的殘缺片段（那是 cmdlog.sh 註解裡寫的已知限制，
+  // 不是這支要解的問題）。
+  function isNoiseMessage(message) {
+    if (!message) return true;
+    if (/^[0-9]+$/.test(message)) return true;
+    var noSpace = message.replace(/ /g, String.fromCharCode());
+    if (noSpace.length >= 3 && new Set(noSpace.split(String.fromCharCode())).size === 1) return true;
+    return false;
+  }
+
+  // 短時間窗突發合併：同一來源在很短時間內連續吐出多筆，多半是同一次
+  // 編輯動作被 cmdlog.sh 誤切成好幾行（CR 在真的按 Enter 之前就被送出，
+  // 見 isNoiseMessage 旁的說明），不是真的連打好幾個指令。同一來源、
+  // 間隔 < BURST_WINDOW_MS 的一串事件，只留時間最新的那一筆（假設最後
+  // 一筆才是編輯完成的版本）——這是有代價的推斷：使用者真的在極短時間
+  // 內連打好幾個不同指令（如 whoami、id、pwd 連打）也會被合併只剩最後
+  // 一行，是跟使用者討論過接受的取捨，根因（cmdlog.sh 的 CR 判斷）另外
+  // 追蹤，不在這裡解。
+  var BURST_WINDOW_MS = 3000;
+
+  function collapseBursts(correlations) {
+    var sorted = correlations.slice().sort(function (a, b) {
+      var ta = a.red ? Date.parse(a.red.observed_at) : 0;
+      var tb = b.red ? Date.parse(b.red.observed_at) : 0;
+      return ta - tb;
+    });
+    var kept = [];
+    for (var i = 0; i < sorted.length; i++) {
+      var cur = sorted[i];
+      var next = sorted[i + 1];
+      if (cur.red && next && next.red && cur.red.source === next.red.source) {
+        var gap = Date.parse(next.red.observed_at) - Date.parse(cur.red.observed_at);
+        if (gap >= 0 && gap < BURST_WINDOW_MS) {
+          continue; // 緊接在後有同來源的更新事件，這筆是被合併掉的片段
+        }
+      }
+      kept.push(cur);
+    }
+    return kept;
+  }
+
   function buildChain(correlations) {
-    // issue #20 時間軸雜訊過濾：只顯示有真實檢測結果的事件（!missed）。
-    // 不用 technique 過濾——technique 只是 11 條規則的標籤，沒命中規則
-    // 但確實被偵測到的攻擊會被誤隱。
-    return buildAllActions(correlations).filter(function (item) {
-      return !item.missed;
+    // hotfix：issue #20（PR #26）把過濾條件改成 status !== "hit" 會把
+    // detection_gap／visibility_gap 全部濾掉，跟時間軸圖說「未被偵測＝
+    // 紅色虛線」的設計互相矛盾，讓 renderTimeline() 畫紅色虛線那段程式
+    // 碼變成永遠執行不到的死碼。改回不過濾狀態，只濾掉明顯雜訊＋短時間
+    // 窗突發片段。
+    return buildAllActions(collapseBursts(correlations)).filter(function (item) {
+      return !isNoiseMessage(item.redMessage);
     });
   }
 
