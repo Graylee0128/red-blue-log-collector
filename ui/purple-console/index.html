@@ -87,14 +87,14 @@
     .stage * { animation: none !important; }
   }
 
-  .top-bar { display: flex; align-items: center; gap: 33.6px; padding-bottom: 14px; border-bottom: 1px solid var(--color-divider); flex-shrink: 0; }
-  .brand { display: flex; align-items: center; gap: 16.8px; }
-  .brand .dot { width: 14px; height: 14px; border-radius: 50%; }
-  .stat-row { margin-left: auto; display: flex; align-items: stretch; gap: 14px; }
-  .stat-tile { position: relative; display: flex; flex-direction: column; gap: 4px; padding: 11.2px 22.4px; border-radius: 8px; background: var(--color-surface); box-shadow: var(--shadow-sm); min-width: 150px; }
-  .stat-tile .label { font-size: 20px; color: var(--color-neutral-500); white-space: nowrap; }
-  .stat-tile .value { font-size: 34px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
-  /* issue #29 item 2：動作／偵測／快速偵測三個 tile 可點擊看明細，反應
+  .top-bar { display: flex; align-items: center; gap: 20px; padding-bottom: 8px; border-bottom: 1px solid var(--color-divider); flex-shrink: 0; }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  .brand .dot { width: 9px; height: 9px; border-radius: 50%; }
+  .stat-row { margin-left: auto; display: flex; align-items: stretch; gap: 10px; }
+  .stat-tile { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 6px 14px; border-radius: 8px; background: var(--color-surface); box-shadow: var(--shadow-sm); min-width: 110px; }
+  .stat-tile .label { font-size: 14px; color: var(--color-neutral-500); white-space: nowrap; }
+  .stat-tile .value { font-size: 24px; font-weight: 500; line-height: 1; font-variant-numeric: tabular-nums; }
+  /* issue #29 item 2：動作／偵測／快速應對三個 tile 可點擊看明細，反應
      時間（單一數字，沒有底層清單可列）不適用，維持不可點。 */
   .stat-tile.clickable { cursor: pointer; }
   .stat-tile.clickable:hover { background: var(--color-neutral-800); }
@@ -120,7 +120,7 @@
   .empty-banner { display: flex; align-items: center; gap: 16.8px; padding: 11.2px 22.4px; border-radius: 8px; background: var(--color-accent-900); border: 1px solid var(--color-accent-700); font-size: 22px; color: var(--color-accent-200); flex-shrink: 0; }
   .error-banner { display: flex; align-items: center; gap: 16.8px; padding: 11.2px 22.4px; border-radius: 8px; background: #3a1620; border: 1px solid #ff4d5e; font-size: 20px; color: #ff9aa4; flex-shrink: 0; }
 
-  .board-row { display: grid; grid-template-columns: 430px minmax(0, 1fr) 430px; gap: 22.4px; height: 470px; flex-shrink: 0; }
+  .board-row { display: grid; grid-template-columns: 430px minmax(0, 1fr) 430px; gap: 22.4px; height: 525px; flex-shrink: 0; }
   /* overflow:hidden 是最後一道防線——量測式排版（見 renderBreachPanel 的
      fitCellLayout()）已經會盡量算出塞得下的尺寸，這條只是保證萬一算錯
      也不會有元素跑到卡片外面，不是排版邏輯本身。 */
@@ -157,7 +157,18 @@
   .patch-cell-fill.suspected { opacity: 0.75; background: linear-gradient(135deg, #7a1414, #ff3b3b); box-shadow: 0 0 10px 2px rgba(255,59,59,0.5); animation: pulse 2s ease-in-out infinite; }
   /* 外網/內網實際數字——比下面純粹「有沒有疑似突破」的小字圖例顯眼，
      緊接在格子下面，是這個面板除了格子本身之外唯一的精確數字。 */
-  .breach-count-line { font-size: 30px; font-weight: 600; color: var(--color-neutral-300); text-align: center; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  /* .breach-view 用 flex:1 撐滿面板剩餘高度、內容卻貼齊頂端對齊，這兩個
+     元素被擠到面板最底部，跟上面的拓樸圖形之間會空出一大截——加一條
+     分隔線＋padding，讓它看起來像面板刻意做的「底部統計區」，不是浮空
+     的文字（不能動 .breach-view 本身的對齊，光束動畫的計算跟它綁在
+     一起）。數字字級也調小一點，跟旁邊 .breach-legend 的視覺份量接近，
+     不要比拓樸圖形本身還搶眼。 */
+  .breach-count-title { font-size: 14px; color: var(--color-neutral-500); text-align: center; border-top: 1px solid var(--color-divider); margin-top: 10px; padding-top: 14px; }
+  /* 呼吸燈：跟頂列「更新於」旁邊那顆用同一組 @keyframes pulse。 */
+  .breach-count-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4d5e; box-shadow: 0 0 8px rgba(255,77,94,0.7); margin-right: 6px; vertical-align: middle; animation: pulse 2s ease-in-out infinite; }
+  .breach-count-line { display: flex; justify-content: center; align-items: baseline; gap: 28px; margin-top: 6px; }
+  .breach-count-line .breach-count-label { font-size: 15px; color: var(--color-neutral-500); margin-right: 6px; }
+  .breach-count-line .breach-count-value { font-size: 30px; font-weight: 700; color: var(--color-text); font-variant-numeric: tabular-nums; }
   /* 純粹的圖例（點的顏色代表什麼），字級跟藍隊那邊的小字說明同一個
      量級，放在面板最下面，不搶格子跟上面數字的視覺重量。 */
   .breach-legend { font-size: 16px; color: var(--color-neutral-500); text-align: center; margin-top: auto; padding-top: 8px; }
@@ -307,20 +318,20 @@
 
   <div class="top-bar">
     <div class="brand">
-      <span class="dot" style="background:#ff4d5e; box-shadow:0 0 22px rgba(255,77,94,0.55);"></span>
-      <span style="font-size:38px; font-weight:600; letter-spacing:0.08em; color:#ff6b78;">RED</span>
-      <span style="font-size:22px; color:var(--color-neutral-600); letter-spacing:0.2em;">VS</span>
-      <span style="font-size:38px; font-weight:600; letter-spacing:0.08em; color:#62b0ff;">BLUE</span>
-      <span class="dot" style="background:#4da6ff; box-shadow:0 0 22px rgba(77,166,255,0.55);"></span>
+      <span class="dot" style="background:#ff4d5e; box-shadow:0 0 14px rgba(255,77,94,0.55);"></span>
+      <span style="font-size:24px; font-weight:600; letter-spacing:0.08em; color:#ff6b78;">RED</span>
+      <span style="font-size:15px; color:var(--color-neutral-600); letter-spacing:0.2em;">VS</span>
+      <span style="font-size:24px; font-weight:600; letter-spacing:0.08em; color:#62b0ff;">BLUE</span>
+      <span class="dot" style="background:#4da6ff; box-shadow:0 0 14px rgba(77,166,255,0.55);"></span>
     </div>
     <div class="stat-row">
-      <div class="stat-tile clickable" id="tile-actions" data-metric="actions"><span class="label">動作</span><span class="value" id="stat-actions">—</span></div>
-      <div class="stat-tile clickable" id="tile-detected" data-metric="detected"><span class="label">偵測</span><span class="value" id="stat-detected">—</span></div>
-      <div class="stat-tile clickable" id="tile-fast" data-metric="fast"><span class="label">快速偵測</span><span class="value" id="stat-fast" style="color:#6ee7a2;">—</span></div>
+      <div class="stat-tile clickable" id="tile-detected" data-metric="detected"><span class="label">應對</span><span class="value" id="stat-detected">—</span></div>
+      <div class="stat-tile clickable" id="tile-fast" data-metric="fast"><span class="label">快速應對</span><span class="value" id="stat-fast" style="color:#6ee7a2;">—</span></div>
+      <div class="stat-tile clickable" id="tile-patched" data-metric="patched"><span class="label">修補</span><span class="value" id="stat-patched" style="color:#4da6ff;">—</span></div>
       <div class="stat-tile"><span class="label">反應時間</span><span class="value" id="stat-mttd">—</span></div>
       <div style="display:flex; align-items:center; gap:11.2px; font-size:20px; color:var(--color-neutral-400); white-space:nowrap;">
         <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 14px var(--color-accent); animation:pulse 2.4s ease-in-out infinite;"></span>
-        <span id="stat-updated">—</span>
+        <span id="stat-updated" style="display:inline-block; width:8ch; font-variant-numeric:tabular-nums; text-align:left;">—</span>
       </div>
       <!-- Collector API 位址固定用 defaultApiBase() 自動偵測（跟這頁同一台
            主機的 :8001），正式部署時 Purple Console 跟 collector 本來就在
@@ -351,7 +362,11 @@
         <div class="attack-beam" id="attack-beam"><div class="pulse-dot"></div></div>
         <div class="clash-col" id="target-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
-      <div class="breach-count-line" id="breach-count-line" hidden>外網 <span id="breach-count-external">0/0</span>　內網 <span id="breach-count-internal">0/0</span></div>
+      <div class="breach-count-title" id="breach-count-title" hidden><span class="breach-count-dot"></span>紅隊入侵數量</div>
+      <div class="breach-count-line" id="breach-count-line" hidden>
+        <span><span class="breach-count-label">外網</span><span class="breach-count-value" id="breach-count-external">0/0</span></span>
+        <span><span class="breach-count-label">內網</span><span class="breach-count-value" id="breach-count-internal">0/0</span></span>
+      </div>
       <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破</div>
     </div>
 
@@ -360,8 +375,9 @@
         <span style="width:10px; height:10px; border-radius:50%; background:var(--color-accent); box-shadow:0 0 12px var(--color-accent);"></span>
         <span class="timeline-title">攻防事件關聯時間軸</span>
         <div class="timeline-legend">
-          <span><span style="width:16px; height:3px; background:#37e08a;"></span>快速偵測 &lt;30s</span>
-          <span><span style="width:16px; height:3px; background:#f2c94c;"></span>延遲偵測 &gt;30s</span>
+          <span><span style="width:16px; height:3px; background:#37e08a;"></span>快速應對 &lt;1min</span>
+          <span><span style="width:16px; height:3px; background:#9184d9;"></span>延遲應對</span>
+          <span><span style="width:16px; height:3px; background:#4da6ff;"></span>主動修補</span>
           <span><span style="width:16px; height:0; border-top:2px dashed #ff4d5e;"></span>未被偵測</span>
         </div>
       </div>
@@ -400,14 +416,14 @@
     <div class="shell" style="box-shadow:0 0 0 1px #3f2430;">
       <div class="shell-head" style="background:#1d1220; border-color:#3f2430;">
         <span class="dot" style="background:#ff4d5e; box-shadow:0 0 12px #ff4d5e;"></span>
-        <span class="title" style="color:#ff8f99;">紅隊終端機　RED SHELL</span>
+        <span class="title" style="color:#ff8f99;">RED SHELL</span>
       </div>
       <div class="shell-body" id="red-shell"></div>
     </div>
     <div class="shell" style="box-shadow:0 0 0 1px #1f3450;">
       <div class="shell-head" style="background:#101c2c; border-color:#1f3450;">
         <span class="dot" style="background:#4da6ff; box-shadow:0 0 12px #4da6ff;"></span>
-        <span class="title" style="color:#8ec6ff;">藍隊監控日誌　BLUE SHELL</span>
+        <span class="title" style="color:#8ec6ff;">BLUE SHELL</span>
       </div>
       <div class="shell-body" id="blue-shell"></div>
     </div>
@@ -418,7 +434,7 @@
 
 <script>
 (function () {
-  var POLL_MS = 8000;
+  var POLL_MS = 3000;
   // 靶機淪陷數方塊網格——左邊紅隊攻擊來源、右邊靶機，都匿名、不對應特定
   // 座位/身分，純粹是「打穿了幾台」的視覺化，真資料見 renderBreachPanel
   // （issue #21 疑似突破偵測）。
@@ -502,12 +518,22 @@
     return (type && EVENT_TYPE_LABELS[type]) || type || "(unclassified)";
   }
 
-  // 三類狀態，對應時間軸圖說的三色：快速偵測(綠)／延遲偵測(黃)／未被偵測
+  // 時間軸圖說四色：快速應對(綠)／延遲應對(紫)／主動修補(藍)／未被偵測
   // (紅)。detection_gap（有比對到藍隊事件，但沒被標記為正式告警）跟
   // visibility_gap（完全沒比對到）在這裡刻意當同一件事處理——藍隊終究
   // 沒有正確標記出這次攻擊，不分「完全沒紀錄」跟「有紀錄但沒告警」，都
   // 算「未被偵測」，不獨立成第四色。藍隊自己的修補進度是另一個完全獨立
   // 的面板（右側 patch-grid，CTF 式漏洞修補題），跟這條時間軸無關。
+  //
+  // 快速應對／延遲應對（跟藍隊確認過現況後改的）：這個場景裡藍隊完全
+  // 沒有自動告警機制，全靠人工盯——原本給「即時告警」設計的 30 秒
+  // fast/slow 分類（detection_method==="alert"）在現實中永遠不會觸發，
+  // 整段停用（見下面註解掉的舊邏輯）。改成對「事後應對」
+  // （detection_method==="response"，issue #33：cmdlog 關鍵字 +
+  // checker.py 驗證雙訊號）本身依反應時間分快慢：1 分鐘內算快速應對
+  // （綠），超過算延遲應對（紫，沿用原本「事後應對」的顏色）。主動修補
+  // （detection_method==="autonomous"，紅隊完全沒動作）沒有紅隊時間可以
+  // 算反應快慢，維持藍色不分。
   //
   // issue #20 時間軸雜訊過濾：只顯示有真實檢測結果的事件（c.status === "hit"）。
   // 不用 technique 過濾——technique 只是 11 條規則的標籤，沒命中規則
@@ -522,20 +548,44 @@
   // Y 筆、每筆標出有沒有被偵測到，不能只給時間軸看得到的那 X 筆
   // （buildChain 過濾掉的部分）。兩個函式共用同一份逐筆計算邏輯，避免
   // 兩處欄位算法分開維護後兜不起來。
+  var FAST_RESPONSE_MS = 60000; // 快速應對門檻：1 分鐘內
+
   function buildAllActions(correlations) {
     return correlations.slice().reverse().map(function (c) {
-      var fast = c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
-      var slow = c.status === "hit" && !fast;
+      // 事後應對（不分快慢）的總旗標——「修補」tile（issue #33 後續）靠
+      // 它算 responded || autonomous，拆快慢後這個總旗標還是要留著。
+      var responded = c.status === "hit" && c.detection_method === "response";
+      // 藍隊自主修補：紅隊完全沒動作，c.red 是 null（見 analysis.py 的
+      // correlate() 新增的那段）——不是「未分類的紅隊事件」，是根本沒有
+      // 紅隊事件可以掛，redLabel/redMessage 都要是 null，不能套
+      // typeLabel(null, ...) 硬湊一個標籤出來。
+      var autonomous = c.status === "hit" && c.detection_method === "autonomous";
+
+      // 舊版：給「即時告警」設計的 fast/slow（<30s/>30s），要求
+      // detection_method==="alert"——這個場景沒有自動告警，這條路徑
+      // 現實中永遠不會觸發，整段停用，換成下面針對「事後應對」本身的
+      // 快慢分色。保留註解、不刪，之後真的接上告警機制時方便復原。
+      // var fast = c.status === "hit" && !responded && !autonomous && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
+      // var slow = c.status === "hit" && !responded && !autonomous && !fast;
+      var fast = responded && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < FAST_RESPONSE_MS; // 快速應對
+      var slow = responded && !fast; // 延遲應對
+
       var missed = c.status !== "hit";
       return {
-        time: fmtTime(c.red ? c.red.observed_at : null),
-        redLabel: typeLabel(c.red, c.technique) || "(unclassified)",
+        time: fmtTime(c.red ? c.red.observed_at : (c.blue ? c.blue.observed_at : null)),
+        redLabel: c.red ? (typeLabel(c.red, c.technique) || "(unclassified)") : null,
         redMessage: c.red ? c.red.message : null,
-        blueLabel: missed ? null : typeLabel(c.blue, null),
+        // 快速應對／延遲應對／主動修補命中時直接標文字，不用 typeLabel()
+        // 套 cmdlog 事件本身的 event_type（會落到「一般紀錄」這種太籠統
+        // 的標籤）——blueMessage 那行照樣顯示藍隊實際打的指令（如
+        // iptables DROP），標籤負責講清楚「這是什麼性質的回應」。
+        blueLabel: missed ? null : (fast ? "快速應對" : (slow ? "延遲應對" : (autonomous ? "主動修補" : typeLabel(c.blue, null)))),
         blueMessage: missed ? null : (c.blue ? c.blue.message : null),
         missed: missed,
         fast: fast,
         slow: slow,
+        responded: responded,
+        autonomous: autonomous,
         severityHigh: c.severity === "high",
         latency: fmtLatency(c.latency_ms)
       };
@@ -563,13 +613,21 @@
   // 內連打好幾個不同指令（如 whoami、id、pwd 連打）也會被合併只剩最後
   // 一行，是跟使用者討論過接受的取捨，根因（cmdlog.sh 的 CR 判斷）另外
   // 追蹤，不在這裡解。
-  var BURST_WINDOW_MS = 3000;
+  var BURST_WINDOW_MS = 5000;
+
+  // 排序用的時間：優先用紅隊事件的時間，藍隊自主修補（issue #33 後續）
+  // 沒有紅隊事件可以掛，退回用藍隊事件自己的時間——不能整批當成 0，
+  // 不然排序會把這些列擠到最前面，buildAllActions() 的 reverse() 之後
+  // 反而變成排在時間軸最後面，跟實際發生時間對不上。
+  function sortKeyMs(item) {
+    if (item.red) return Date.parse(item.red.observed_at);
+    if (item.blue) return Date.parse(item.blue.observed_at);
+    return 0;
+  }
 
   function collapseBursts(correlations) {
     var sorted = correlations.slice().sort(function (a, b) {
-      var ta = a.red ? Date.parse(a.red.observed_at) : 0;
-      var tb = b.red ? Date.parse(b.red.observed_at) : 0;
-      return ta - tb;
+      return sortKeyMs(a) - sortKeyMs(b);
     });
     var kept = [];
     for (var i = 0; i < sorted.length; i++) {
@@ -593,7 +651,10 @@
     // 碼變成永遠執行不到的死碼。改回不過濾狀態，只濾掉明顯雜訊＋短時間
     // 窗突發片段。
     return buildAllActions(collapseBursts(correlations)).filter(function (item) {
-      return !isNoiseMessage(item.redMessage);
+      // 藍隊自主修補（item.redMessage 是 null，見 buildAllActions()）不
+      // 該被雜訊判斷擋掉——isNoiseMessage(null) 一律回傳 true，那是給
+      // 「有紅隊訊息但內容像雜訊」設計的，不是「根本沒有紅隊訊息」。
+      return !item.redMessage || !isNoiseMessage(item.redMessage);
     });
   }
 
@@ -627,18 +688,33 @@
     chain.forEach(function (item) {
       var row = el("div", "t-row");
       row.appendChild(el("span", "time", item.time));
-      row.appendChild(whoCell("#ff4d5e", "rgba(255,77,94,0.6)", item.redLabel, item.redMessage, item.severityHigh));
+      if (item.redLabel) {
+        row.appendChild(whoCell("#ff4d5e", "rgba(255,77,94,0.6)", item.redLabel, item.redMessage, item.severityHigh));
+      } else {
+        // 藍隊自主修補：沒有紅隊事件可以掛，左側留空，不套紅點。
+        row.appendChild(el("span", ""));
+      }
+      // 快速應對(綠)／延遲應對(紫)／主動修補(藍)——fast/slow 現在是
+      // 「事後應對」本身依反應時間分快慢（見 buildAllActions() 旁的
+      // 說明），不是舊版的即時告警分類，item.responded 一定會落進
+      // fast 或 slow 其中一個，不用再另外判斷。
       if (item.fast) {
-        row.appendChild(bar("#37e08a"));
+        row.appendChild(bar("#37e08a")); // 快速應對 <1min
       } else if (item.slow) {
-        row.appendChild(bar("#f2c94c"));
+        row.appendChild(bar("#9184d9")); // 延遲應對，沿用原本「事後應對」的紫色
+      } else if (item.autonomous) {
+        row.appendChild(bar("#4da6ff")); // 主動修補：跟一般藍隊藍區隔開紫色，用藍色
       } else {
         row.appendChild(el("span", "dash"));
       }
       if (item.missed) {
         row.appendChild(el("span", "miss", '<span class="ring"></span><span class="txt">未被偵測</span>'));
       } else if (item.blueLabel) {
-        row.appendChild(whoCell("#4da6ff", "rgba(77,166,255,0.6)", item.blueLabel, item.blueMessage, false));
+        // 圓點顏色跟上面那條 bar 一致：快速應對綠、延遲應對紫、主動修補
+        // （或還沒被這批新分類覆蓋到的其他 blueLabel）藍。
+        var blueDotColor = item.fast ? "#37e08a" : item.slow ? "#9184d9" : "#4da6ff";
+        var blueGlowColor = item.fast ? "rgba(55,224,138,0.6)" : item.slow ? "rgba(145,132,217,0.6)" : "rgba(77,166,255,0.6)";
+        row.appendChild(whoCell(blueDotColor, blueGlowColor, item.blueLabel, item.blueMessage, false));
       } else {
         row.appendChild(el("span", ""));
       }
@@ -647,27 +723,36 @@
     });
   }
 
-  // issue #29 item 2：動作／偵測／快速偵測三個 tile 點擊看明細（精簡版：
+  // issue #29 item 2：動作／偵測／快速應對三個 tile 點擊看明細（精簡版：
   // 只列時間+類型），用這次輪詢已經算好的 chain，不額外打 API。「動作」
   // 「偵測」目前口徑相同（都是 buildChain 過濾後的 hit 清單，見 item 1
-  // 的註解），共用同一份清單；「快速偵測」是其中 latency < 30 秒的子集。
+  // 的註解），共用同一份清單；「快速應對」是其中反應時間 < 1 分鐘的子集。
   var lastChain = [];
   var lastAllActions = [];
   var openTileMetric = null;
 
-  var METRIC_TITLES = { actions: "動作", detected: "偵測", fast: "快速偵測" };
+  var METRIC_TITLES = { detected: "應對", fast: "快速應對", patched: "修補" };
 
-  // 「偵測」tile 顯示的是「X / Y」比例（見 refresh()），明細要對得起這個
-  // 分數——用 lastAllActions（buildAllActions() 的完整版本，含未被偵測
-  // 的），不能只給 lastChain（時間軸看得到的那 X 筆）。「動作」跟「快速
-  // 偵測」則要跟畫面上其他地方（時間軸、tile 數字本身）口徑一致，維持
-  // 只看 lastChain。
+  // 「應對」tile 顯示的是「藍隊應對（快速+延遲）／紅隊事件」比例（見
+  // refresh()）——分母只算真的有紅隊事件可以掛的列（item.redLabel 不是
+  // null），藍隊自主修補（沒有紅隊事件，item.redLabel 是 null）不算紅隊
+  // 事件，不能混進分母，也不能算進分子（那是「修補」tile 的範圍，見
+  // patched）。明細要對得起這個分數——用 lastAllActions（buildAllActions()
+  // 的完整版本，含未被偵測的），不能只給 lastChain（時間軸看得到的那
+  // X 筆）。「動作」「快速應對」「修補」則要跟畫面上其他地方（時間軸、
+  // tile 數字本身）口徑一致，維持只看 lastChain。
   function metricList(metric) {
     if (metric === "fast") {
       return lastChain.filter(function (item) { return item.fast; });
     }
+    if (metric === "patched") {
+      // 「修補」＝ 事後應對（issue #33）＋ 藍隊自主修補，兩種都是靠
+      // cmdlog 關鍵字 + checker.py 驗證雙訊號才算數，不是隨便打的指令。
+      return lastChain.filter(function (item) { return item.responded || item.autonomous; });
+    }
     if (metric === "detected") {
-      return lastAllActions;
+      // 藍隊自主修補沒有紅隊事件可以掛，不算進「應對」的分母。
+      return lastAllActions.filter(function (item) { return item.redLabel !== null; });
     }
     return lastChain;
   }
@@ -693,10 +778,12 @@
         row.appendChild(t);
         var ty = document.createElement("span");
         ty.className = "type";
-        ty.textContent = item.redLabel;
+        // 藍隊自主修補沒有紅隊事件，item.redLabel 是 null——退回顯示
+        // blueLabel（「主動修補」），不然這裡會是空白看起來像壞掉。
+        ty.textContent = item.redLabel || item.blueLabel || "";
         row.appendChild(ty);
         // 「偵測」明細（lastAllActions）才會混到未被偵測的項目，補一個
-        // 狀態字樣——「動作」「快速偵測」的清單本來就已經全部是命中的，
+        // 狀態字樣——「動作」「快速應對」的清單本來就已經全部是命中的，
         // item.missed 一定是 false，不會多出這個標籤。
         if (item.missed) {
           var st = document.createElement("span");
@@ -732,7 +819,7 @@
     openTileMetric = metric;
   }
 
-  ["tile-actions", "tile-detected", "tile-fast"].forEach(function (id) {
+  ["tile-detected", "tile-fast", "tile-patched"].forEach(function (id) {
     var tile = document.getElementById(id);
     tile.addEventListener("click", function (evt) {
       evt.stopPropagation();
@@ -823,7 +910,13 @@
     var showSuspected = realCount > 0 && (externalCount > 0 || internalCount > 0);
     var suspectedExternal = showSuspected ? Math.min(externalCount, count) : 0;
     var suspectedInternal = showSuspected ? Math.min(internalCount, count) : 0;
-    document.getElementById("breach-count-line").hidden = !showSuspected;
+    // 數字列（外網/內網 X/Y）改成只要有真的席位資料就顯示，不綁
+    // showSuspected——沒有疑似突破時顯示 0/Y 也是有意義的資訊（有幾台
+    // 靶機、目前 0 台被突破），不該整排藏起來看起來像壞了。小字圖例
+    // （單純講「疑似突破」四個字的說明文字）維持跟 showSuspected 綁，
+    // 沒有疑似突破時不需要解釋這個詞。
+    document.getElementById("breach-count-title").hidden = realCount === 0;
+    document.getElementById("breach-count-line").hidden = realCount === 0;
     document.getElementById("breach-legend").hidden = !showSuspected;
     // count 是目前畫出來的靶機格總數（分母），suspectedExternal／
     // suspectedInternal 是被點亮的格數（分子）——跟格子本身點亮的數量
@@ -1208,11 +1301,23 @@
       // 共用同一份 chain 從根本上避免對不上。
       var chain = buildChain(correlations);
       lastChain = chain; // 給 tile 明細卡片（issue #29 item 2）用，同一份資料，不重打 API
-      lastAllActions = buildAllActions(correlations); // 給「偵測」明細用，含未被偵測的完整版本
-      document.getElementById("stat-actions").textContent = chain.length;
-      document.getElementById("stat-detected").textContent = hasData ? (data.detected + " / " + data.red_actions) : "—";
+      // 「應對」明細用，含未被偵測的完整版本——跟 buildChain 一樣先過
+      // collapseBursts()，不然同一次操作被 cmdlog CR 誤判切成好幾筆
+      // 殘缺片段時（如 issue #39 記錄的「W」／「whoami」），每一筆都會
+      // 各自配對到同一筆藍隊回應，「應對」分子分母會被灌水。
+      lastAllActions = buildAllActions(collapseBursts(correlations));
+      // 「應對」＝ 藍隊應對（快速+延遲，不含自主修補）／ 紅隊事件——
+      // 前端自己從 lastAllActions 算，不用伺服器端的 data.detected／
+      // data.red_actions：那兩個數字目前連藍隊自主修補（沒有紅隊事件）
+      // 都算進去了，口徑跟這裡要的「紅隊事件有沒有被藍隊應對」對不上。
+      var redAnchored = lastAllActions.filter(function (item) { return item.redLabel !== null; });
+      var respondedAnchored = redAnchored.filter(function (item) { return item.fast || item.slow; });
+      document.getElementById("stat-detected").textContent = hasData ? (respondedAnchored.length + " / " + redAnchored.length) : "—";
       document.getElementById("stat-fast").textContent = chain.filter(function (item) {
         return item.fast;
+      }).length;
+      document.getElementById("stat-patched").textContent = chain.filter(function (item) {
+        return item.responded || item.autonomous;
       }).length;
       document.getElementById("stat-mttd").textContent = fmtMttd(data.mttd_p50_ms);
 

@@ -13,6 +13,15 @@ class FakeStore:
     def __init__(self):
         self.upserts = []
         self.known_seats = []
+        self.appended_events = []  # issue #33：blue.remediation 合成事件
+
+    def get_blue_score(self, *, target):
+        # 回傳這個 target「目前存的」快照（upsert 前的舊值）——跟真的
+        # EventStore 一樣，模擬 upsert 前查舊值的順序。
+        for row in reversed(self.upserts):
+            if row["target"] == target:
+                return row
+        return None
 
     def upsert_blue_score(self, *, target, total_score, max_score, checks, observed_at):
         self.upserts.append(
@@ -24,6 +33,10 @@ class FakeStore:
         if is_new:
             self.known_seats.append(seat)
         return is_new
+
+    def append(self, *, team, raw_payload, event):
+        self.appended_events.append({"team": team, "raw_payload": raw_payload, "event": event})
+        return True
 
 
 def _checks(*, formal_pass: bool, hidden_pass: bool):
@@ -185,3 +198,75 @@ def test_tailer_poll_once_no_seat_log_dir_skips_seat_scan(tmp_path):
     tailer = BlueScoreTailer(str(tmp_path), store)  # seat_log_dir 預設 None
     tailer._poll_once()
     assert store.known_seats == []
+
+
+# issue #33：check 從 fail 翻 pass 時補一筆 blue.remediation 合成事件，
+# analysis.py 的事後應對比對要靠這個當「真的驗證過修好了」的客觀訊號。
+
+def test_newly_passed_check_emits_remediation_event(tmp_path):
+    path = tmp_path / "leaderboard_blue-a-01.json"
+
+    # 第一輪：vuln1 還沒修。
+    report1 = {
+        "target": "blue-a-01", "timestamp": "2026-08-19T05:00:00",
+        "total_score": 0, "max_score": 100,
+        "checks": _checks(formal_pass=False, hidden_pass=False)[:5],
+    }
+    path.write_text(json.dumps(report1), encoding="utf-8")
+    store = FakeStore()
+    tailer = BlueScoreTailer(str(tmp_path), store)
+    tailer._poll_once()
+    assert store.appended_events == []  # 第一次看到這個 target，不補事件
+
+    # 第二輪：vuln1 修好了，其他還是 fail。
+    report2 = {
+        "target": "blue-a-01", "timestamp": "2026-08-19T05:03:00",
+        "total_score": 20, "max_score": 100,
+        "checks": [
+            {"id": "vuln1_x", "status": "pass", "score": 20, "max_score": 20},
+            *_checks(formal_pass=False, hidden_pass=False)[1:5],
+        ],
+    }
+    path.write_text(json.dumps(report2), encoding="utf-8")
+    tailer._poll_once()
+
+    assert len(store.appended_events) == 1
+    event = store.appended_events[0]["event"]
+    assert event["team"] == "blue"
+    assert event["event_type"] == "blue.remediation"
+    assert ".env 權限修復" in event["message"]
+    assert event["source"] == "blue-a-01"
+
+
+def test_check_still_fail_does_not_emit_event(tmp_path):
+    path = tmp_path / "leaderboard_blue-a-01.json"
+    report = {
+        "target": "blue-a-01", "timestamp": "2026-08-19T05:00:00",
+        "total_score": 0, "max_score": 100,
+        "checks": _checks(formal_pass=False, hidden_pass=False)[:5],
+    }
+    path.write_text(json.dumps(report), encoding="utf-8")
+    store = FakeStore()
+    tailer = BlueScoreTailer(str(tmp_path), store)
+    tailer._poll_once()
+    tailer._poll_once()  # 兩輪都一樣，沒有新的 pass
+    assert store.appended_events == []
+
+
+def test_check_already_passing_stays_silent_on_repeat_poll(tmp_path):
+    # 已經 pass 的題目繼續回報 pass，不該每輪都重複發事件。
+    path = tmp_path / "leaderboard_blue-a-01.json"
+    report = {
+        "target": "blue-a-01", "timestamp": "2026-08-19T05:00:00",
+        "total_score": 20, "max_score": 100,
+        "checks": [
+            {"id": "vuln1_x", "status": "pass", "score": 20, "max_score": 20},
+            *_checks(formal_pass=False, hidden_pass=False)[1:5],
+        ],
+    }
+    path.write_text(json.dumps(report), encoding="utf-8")
+    store = FakeStore()
+    tailer = BlueScoreTailer(str(tmp_path), store)
+    tailer._poll_once()  # 第一次看到，不補事件（見上面的規則）
+    tailer._poll_once()  # 第二次仍是 pass，同樣不該補
+    assert store.appended_events == []
