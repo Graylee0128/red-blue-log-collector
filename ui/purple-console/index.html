@@ -362,6 +362,7 @@
         <div class="timeline-legend">
           <span><span style="width:16px; height:3px; background:#37e08a;"></span>快速偵測 &lt;30s</span>
           <span><span style="width:16px; height:3px; background:#f2c94c;"></span>延遲偵測 &gt;30s</span>
+          <span><span style="width:16px; height:3px; background:#9184d9;"></span>事後應對</span>
           <span><span style="width:16px; height:0; border-top:2px dashed #ff4d5e;"></span>未被偵測</span>
         </div>
       </div>
@@ -502,12 +503,18 @@
     return (type && EVENT_TYPE_LABELS[type]) || type || "(unclassified)";
   }
 
-  // 三類狀態，對應時間軸圖說的三色：快速偵測(綠)／延遲偵測(黃)／未被偵測
+  // 時間軸圖說四色：快速偵測(綠)／延遲偵測(黃)／事後應對(紫)／未被偵測
   // (紅)。detection_gap（有比對到藍隊事件，但沒被標記為正式告警）跟
   // visibility_gap（完全沒比對到）在這裡刻意當同一件事處理——藍隊終究
   // 沒有正確標記出這次攻擊，不分「完全沒紀錄」跟「有紀錄但沒告警」，都
   // 算「未被偵測」，不獨立成第四色。藍隊自己的修補進度是另一個完全獨立
   // 的面板（右側 patch-grid，CTF 式漏洞修補題），跟這條時間軸無關。
+  //
+  // 事後應對（issue #33）：status==="hit" 但 detection_method==="response"
+  // ——藍隊沒在 30 秒內告警，是靠 cmdlog 關鍵字 + checker.py 驗證兩種
+  // 訊號都成立才算數（見 analysis.py 的 _find_response_action()）。故意
+  // 不跟「延遲偵測」的黃色混在一起：那是告警本身慢，這是根本沒告警、
+  // 藍隊自己查到並處理，觀眾要分得出這是兩回事。
   //
   // issue #20 時間軸雜訊過濾：只顯示有真實檢測結果的事件（c.status === "hit"）。
   // 不用 technique 過濾——technique 只是 11 條規則的標籤，沒命中規則
@@ -524,18 +531,24 @@
   // 兩處欄位算法分開維護後兜不起來。
   function buildAllActions(correlations) {
     return correlations.slice().reverse().map(function (c) {
-      var fast = c.status === "hit" && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
-      var slow = c.status === "hit" && !fast;
+      var responded = c.status === "hit" && c.detection_method === "response";
+      var fast = c.status === "hit" && !responded && c.latency_ms !== null && c.latency_ms !== undefined && c.latency_ms < 30000;
+      var slow = c.status === "hit" && !responded && !fast;
       var missed = c.status !== "hit";
       return {
         time: fmtTime(c.red ? c.red.observed_at : null),
         redLabel: typeLabel(c.red, c.technique) || "(unclassified)",
         redMessage: c.red ? c.red.message : null,
-        blueLabel: missed ? null : typeLabel(c.blue, null),
+        // 事後應對命中時直接標「事後應對」，不用 typeLabel() 套 cmdlog
+        // 事件本身的 event_type（會落到「一般紀錄」這種太籠統的標籤）——
+        // blueMessage 那行照樣顯示藍隊實際打的指令（如 iptables DROP），
+        // 標籤負責講清楚「這是什麼性質的回應」。
+        blueLabel: missed ? null : (responded ? "事後應對" : typeLabel(c.blue, null)),
         blueMessage: missed ? null : (c.blue ? c.blue.message : null),
         missed: missed,
         fast: fast,
         slow: slow,
+        responded: responded,
         severityHigh: c.severity === "high",
         latency: fmtLatency(c.latency_ms)
       };
@@ -632,13 +645,19 @@
         row.appendChild(bar("#37e08a"));
       } else if (item.slow) {
         row.appendChild(bar("#f2c94c"));
+      } else if (item.responded) {
+        row.appendChild(bar("#9184d9")); // 事後應對（issue #33），跟 accent 色一致
       } else {
         row.appendChild(el("span", "dash"));
       }
       if (item.missed) {
         row.appendChild(el("span", "miss", '<span class="ring"></span><span class="txt">未被偵測</span>'));
       } else if (item.blueLabel) {
-        row.appendChild(whoCell("#4da6ff", "rgba(77,166,255,0.6)", item.blueLabel, item.blueMessage, false));
+        // 事後應對用跟中間那條進度條一致的紫色點，藍色專屬「有告警」
+        // 那種即時偵測，兩種訊號來源不一樣，點的顏色也該分開。
+        var blueDotColor = item.responded ? "#9184d9" : "#4da6ff";
+        var blueGlowColor = item.responded ? "rgba(145,132,217,0.6)" : "rgba(77,166,255,0.6)";
+        row.appendChild(whoCell(blueDotColor, blueGlowColor, item.blueLabel, item.blueMessage, false));
       } else {
         row.appendChild(el("span", ""));
       }

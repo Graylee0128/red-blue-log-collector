@@ -28,6 +28,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from .adapters import blue
 from .store import EventStore
 
 logger = logging.getLogger("rbcollector.blue_score_receiver")
@@ -62,6 +63,28 @@ def find_blue_seat_names(seat_dir: Path) -> list[str]:
 # Mirrors checker.py's hidden bonus check ids exactly -- these are the ids
 # that must not be visible until the 5 formal checks all pass.
 _HIDDEN_CHECK_IDS = ("vuln6_webshell_bonus", "vuln7_docker_escape")
+
+# 人類可讀的關卡標籤（issue #33）——取自藍隊教練手冊（vuln{N}_... 的編號
+# 順序跟手冊的關卡 01-07 一致），只用來組合成 blue.remediation 事件的
+# message，不影響判分本身。id 前綴比對不到就顯示原始 id，不擋流程。
+_CHECK_LABELS = {
+    "vuln1": ".env 權限修復",
+    "vuln2": "/etc/shadow 權限修復",
+    "vuln3": "sudoers 提權漏洞修復",
+    "vuln4": "DB 內網憑證清除",
+    "vuln5": "cron 腳本權限修復",
+    "vuln6": "webshell 後門封鎖",
+    "vuln7": "docker socket 逃逸修復",
+}
+
+
+def _check_label(check_id: str) -> str:
+    prefix = check_id.split("_", 1)[0]
+    return _CHECK_LABELS.get(prefix, check_id)
+
+
+def _passed_check_ids(checks: list[dict[str, Any]]) -> set[str]:
+    return {c["id"] for c in checks if c.get("status") == "pass" and c.get("id")}
 
 
 def visible_checks(checks: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -134,6 +157,11 @@ class BlueScoreTailer:
                 if report is None:
                     continue
                 try:
+                    # upsert 前先拿舊快照——issue #33 要拿它跟這次的報告 diff，
+                    # 找出哪一項 check 剛從 fail 翻 pass，補一筆合成事件進
+                    # normalized_events。順序不能反：upsert 完再查就只會拿到
+                    # 新值，diff 不出東西。
+                    previous = self.store.get_blue_score(target=report["target"])
                     self.store.upsert_blue_score(
                         target=report["target"],
                         total_score=report["total_score"],
@@ -141,6 +169,7 @@ class BlueScoreTailer:
                         checks=report["checks"],
                         observed_at=report["timestamp"],
                     )
+                    self._record_newly_passed_checks(previous, report)
                 except Exception:
                     logger.exception("failed to upsert blue score for %s", path.name)
 
@@ -150,6 +179,39 @@ class BlueScoreTailer:
                     self.store.record_known_blue_seat(seat=seat)
                 except Exception:
                     logger.exception("failed to record known blue seat %s", seat)
+
+    def _record_newly_passed_checks(self, previous: dict[str, Any] | None, report: dict[str, Any]) -> None:
+        """checker.py 判定某一題從 fail 翻 pass，補一筆合成的 blue.remediation
+        事件進 normalized_events（issue #33）——analysis.py 的事後應對比對
+        要靠這個當「真的驗證過修好了」的客觀訊號，跟 cmdlog 關鍵字猜測交叉
+        比對，兩者都成立才算數，單靠其中一種都不夠可靠。
+
+        沿用既有事件管線（adapters/blue.py 的 normalize()），不用另開資料表
+        或端點——這批事件自然會出現在 /events、/timeline，也會被
+        analysis.py 的 correlate() 掃到。report 已經是 filtered_report() 處理
+        過的（隱藏題解鎖前不出現），這裡不用重複過濾，也不會因此洩漏隱藏
+        題進度。
+
+        previous 是 None（第一次看到這個 target）時，不補任何事件——沒有
+        「之前」可比較，不能把「第一次回報就是 pass」當成「剛修好」，那
+        通常代表這關本來就沒被破過，不是藍隊做了什麼。
+        """
+        if previous is None:
+            return
+        old_ids = _passed_check_ids(previous["checks"])
+        new_ids = _passed_check_ids(report["checks"])
+        for check_id in sorted(new_ids - old_ids):
+            payload = {
+                "message": f"checker.py: {_check_label(check_id)} 已修復",
+                "event_type": "blue.remediation",
+                "source": report["target"],
+                "observed_at": report["timestamp"],
+            }
+            try:
+                event = blue.normalize(payload)
+                self.store.append(team="blue", raw_payload=payload, event=event)
+            except Exception:
+                logger.exception("failed to record remediation event for %s/%s", report["target"], check_id)
 
     async def run(self) -> None:
         logger.info("blue score tailer started, monitoring %s", self.score_dir)
