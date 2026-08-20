@@ -125,6 +125,17 @@ def analysis(
     return result
 
 
+@app.post("/admin/clear", dependencies=[Depends(require_ingest_token)])
+def admin_clear() -> dict[str, str]:
+    """issue #38 選項 2：一鍵清空目前演練資料，準備下一局用（TRUNCATE
+    六張表）。破壞性操作，用跟 /ingest/* 一樣的 INGEST_TOKEN 保護，不能
+    公開觸發。不會動 host 端的 leaderboard/seat log 檔案——那些是唯讀
+    掛載，清資料庫後如果 Metis 沒清掉自己的殘留檔，下一輪輪詢還是會把
+    舊資料寫回來（見 store.clear_all() 的說明，這是已知限制）。"""
+    store.clear_all()
+    return {"status": "cleared"}
+
+
 @app.get("/events/{event_id}/context")
 def event_context(
     event_id: str,

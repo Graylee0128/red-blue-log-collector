@@ -32,6 +32,10 @@ class FakeStore:
     def context(self, event_id, window_minutes=5):
         return [] if any(e.get("event_id") == event_id for e in self._events) else None
 
+    def clear_all(self):
+        self._events = []
+        self.cleared = True
+
 
 HIT_PAIR = [
     {
@@ -118,3 +122,21 @@ def test_event_context_public_needs_no_token(client):
     resp = client.get("/events/evt-red-1/context")
     assert resp.status_code == 200
     assert resp.json()["lines"] == []
+
+
+# issue #38：一鍵清場端點，破壞性操作要跟 /ingest/* 一樣的 token 保護。
+
+def test_admin_clear_without_token_rejected(client):
+    resp = client.post("/admin/clear")
+    assert resp.status_code == 401
+    # 沒過驗證就不該真的清掉——確認 store 沒被呼叫。
+    assert not getattr(server_module.store, "cleared", False)
+
+
+def test_admin_clear_with_token_wipes_store(client):
+    resp = client.post("/admin/clear", headers={"Authorization": "Bearer secret"})
+    assert resp.status_code == 200
+    assert resp.json() == {"status": "cleared"}
+    assert server_module.store.cleared is True
+    # 清完之後 /analysis 應該回空的，不是還殘留舊資料。
+    assert client.get("/analysis").json()["correlations"] == []
