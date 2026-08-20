@@ -12,6 +12,17 @@ def correlate(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
     blues = [e for e in events if e.get("team") == "blue"]
     results: list[dict[str, Any]] = []
 
+    # 已經被某一列用掉的藍隊事件（alert 配對、事後應對 cmdlog、或它們背後
+    # 依賴的 blue.remediation）——避免下面「藍隊自主修補」那段重複列出
+    # 同一筆藍隊事件。用 id(event)（物件本身的記憶體位址）當 key，不是
+    # event_id 欄位——測試 fixture 常常不帶 event_id，用欄位值當 key 在
+    # 缺欄位時會整個失效（claim 永遠 no-op），物件識別才是真的可靠。
+    claimed_blue_ids: set[int] = set()
+
+    def _claim(event: dict[str, Any] | None) -> None:
+        if event is not None:
+            claimed_blue_ids.add(id(event))
+
     for red in reds:
         match = _find_match(red, blues)
         if match is not None:
@@ -24,6 +35,7 @@ def correlate(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                     "latency_ms": latency_ms,
                     "detection_method": "alert",
                 })
+                _claim(match)
                 continue
             # 30 秒內有配對到藍隊事件，但不是告警——先記下來當 fallback。
             # 事後應對比對（issue #33）等一下如果也沒找到更好的結果，就用
@@ -45,8 +57,39 @@ def correlate(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 "latency_ms": _delta_ms(red.get("observed_at"), response.get("observed_at")),
                 "detection_method": "response",
             })
+            _claim(response)
+            # 這筆紅隊事件能配對到事後應對，代表窗口內至少有一筆
+            # blue.remediation 成立（見 _find_response_action 的
+            # has_remediation 檢查）——把它也標記已使用，不然下面
+            # 「藍隊自主修補」還會把同一筆 remediation 再單獨列一次。
+            for candidate in blues:
+                if _is_remediation_event(candidate) and _within_response_window(red.get("observed_at"), candidate):
+                    _claim(candidate)
         else:
             results.append(fallback)
+
+    # 藍隊自主修補：紅隊完全沒動作、藍隊自己抓到並修好漏洞的情況。
+    # correlate() 本來完全以紅隊事件為錨點，這種情況原本會直接從時間軸上
+    # 消失（見討論：使用者明確要求要能單獨看到）。這裡額外掃一輪——每一
+    # 筆通過 checker.py 驗證、還沒被上面任何一列用掉的 blue.remediation，
+    # 往前找同樣通過雙訊號驗證（cmdlog 關鍵字）的動作，單獨列一筆，跟
+    # 「事後應對」用同一套雙訊號規則，只是沒有紅隊事件可以掛。
+    for remediation in blues:
+        if not _is_remediation_event(remediation):
+            continue
+        if id(remediation) in claimed_blue_ids:
+            continue
+        candidate = _find_autonomous_fix(remediation, blues, claimed_blue_ids)
+        if candidate is not None:
+            results.append({
+                "red": None,
+                "blue": candidate,
+                "status": "hit",
+                "latency_ms": None,
+                "detection_method": "autonomous",
+            })
+            _claim(candidate)
+            _claim(remediation)
     return results
 
 
@@ -55,10 +98,12 @@ def summarize(events: list[dict[str, Any]]) -> dict[str, Any]:
 
     # 資料驅動偵測規則（取代 cyber 的 Grafana 告警規則，見 detections.py）
     # 幫每一列標上紅隊事件命中的技法，不動上面已經算好的
-    # hit/detection_gap/visibility_gap 判定。
+    # hit/detection_gap/visibility_gap 判定。藍隊自主修補列（row["red"]
+    # 是 None）沒有紅隊事件可以比對技法，維持 None 即可。
     technique_hits = evaluate_detections(events)
     for row in rows:
-        tag = technique_hits.get((row["red"] or {}).get("event_id"))
+        red = row["red"]
+        tag = technique_hits.get(red.get("event_id")) if red else None
         row["rule_id"] = tag["rule_id"] if tag else None
         row["technique"] = tag["technique"] if tag else None
         row["severity"] = tag["severity"] if tag else None
@@ -141,6 +186,18 @@ def _is_remediation_event(event: dict[str, Any]) -> bool:
     return str(event.get("event_type") or "") == "blue.remediation"
 
 
+def _within_response_window(anchor_observed_at: Any, blue: dict[str, Any]) -> bool:
+    """`blue` 是否落在 anchor 時間點之後、_RESPONSE_WINDOW_SECONDS 秒內
+    （不檢查 source_ip/destination——只用來判斷「這筆 remediation 是不是
+    已經被某個紅隊事件的事後應對用掉了」，不是重新做一次配對）。"""
+    anchor_time = _parse(anchor_observed_at)
+    blue_time = _parse(blue.get("observed_at"))
+    if anchor_time is None or blue_time is None:
+        return False
+    delta = (blue_time - anchor_time).total_seconds()
+    return 0 <= delta <= _RESPONSE_WINDOW_SECONDS
+
+
 def _find_response_action(red: dict[str, Any], blues: list[dict[str, Any]]) -> dict[str, Any] | None:
     """5 分鐘窗口內找「cmdlog 關鍵字 + checker.py 驗證」兩種訊號都成立的
     事後應對（issue #33）。只在紅隊行動之後（不含之前）的窗口內找，不是
@@ -185,6 +242,36 @@ def _find_response_action(red: dict[str, Any], blues: list[dict[str, Any]]) -> d
             continue
         delta = _delta_in_window(candidate)
         if delta is None:
+            continue
+        if best is None or delta < best[0]:
+            best = (delta, candidate)
+    return best[1] if best else None
+
+
+def _find_autonomous_fix(
+    remediation: dict[str, Any], blues: list[dict[str, Any]], claimed_ids: set[int]
+) -> dict[str, Any] | None:
+    """藍隊自主修補：以 blue.remediation 事件本身為錨點（不是紅隊事件），
+    往前 _RESPONSE_WINDOW_SECONDS 秒內找同樣通過雙訊號驗證的 cmdlog——
+    邏輯跟 _find_response_action 對稱，只是時間窗方向相反（remediation
+    在後、cmdlog 在前），且排除已經被別的列用掉的候選（claimed_ids，用
+    id(event) 當 key，理由見 correlate() 裡 _claim() 旁的說明）。
+    """
+    rem_time = _parse(remediation.get("observed_at"))
+    if rem_time is None:
+        return None
+
+    best: tuple[float, dict[str, Any]] | None = None
+    for candidate in blues:
+        if id(candidate) in claimed_ids:
+            continue
+        if not _is_response_action(candidate):
+            continue
+        candidate_time = _parse(candidate.get("observed_at"))
+        if candidate_time is None:
+            continue
+        delta = (rem_time - candidate_time).total_seconds()
+        if delta < 0 or delta > _RESPONSE_WINDOW_SECONDS:
             continue
         if best is None or delta < best[0]:
             best = (delta, candidate)
