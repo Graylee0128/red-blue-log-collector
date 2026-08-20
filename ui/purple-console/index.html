@@ -157,7 +157,18 @@
   .patch-cell-fill.suspected { opacity: 0.75; background: linear-gradient(135deg, #7a1414, #ff3b3b); box-shadow: 0 0 10px 2px rgba(255,59,59,0.5); animation: pulse 2s ease-in-out infinite; }
   /* 外網/內網實際數字——比下面純粹「有沒有疑似突破」的小字圖例顯眼，
      緊接在格子下面，是這個面板除了格子本身之外唯一的精確數字。 */
-  .breach-count-line { font-size: 30px; font-weight: 600; color: var(--color-neutral-300); text-align: center; margin-top: 10px; font-variant-numeric: tabular-nums; }
+  /* .breach-view 用 flex:1 撐滿面板剩餘高度、內容卻貼齊頂端對齊，這兩個
+     元素被擠到面板最底部，跟上面的拓樸圖形之間會空出一大截——加一條
+     分隔線＋padding，讓它看起來像面板刻意做的「底部統計區」，不是浮空
+     的文字（不能動 .breach-view 本身的對齊，光束動畫的計算跟它綁在
+     一起）。數字字級也調小一點，跟旁邊 .breach-legend 的視覺份量接近，
+     不要比拓樸圖形本身還搶眼。 */
+  .breach-count-title { font-size: 14px; color: var(--color-neutral-500); text-align: center; border-top: 1px solid var(--color-divider); margin-top: 10px; padding-top: 14px; }
+  /* 呼吸燈：跟頂列「更新於」旁邊那顆用同一組 @keyframes pulse。 */
+  .breach-count-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: #ff4d5e; box-shadow: 0 0 8px rgba(255,77,94,0.7); margin-right: 6px; vertical-align: middle; animation: pulse 2s ease-in-out infinite; }
+  .breach-count-line { display: flex; justify-content: center; align-items: baseline; gap: 28px; margin-top: 6px; }
+  .breach-count-line .breach-count-label { font-size: 15px; color: var(--color-neutral-500); margin-right: 6px; }
+  .breach-count-line .breach-count-value { font-size: 30px; font-weight: 700; color: var(--color-text); font-variant-numeric: tabular-nums; }
   /* 純粹的圖例（點的顏色代表什麼），字級跟藍隊那邊的小字說明同一個
      量級，放在面板最下面，不搶格子跟上面數字的視覺重量。 */
   .breach-legend { font-size: 16px; color: var(--color-neutral-500); text-align: center; margin-top: auto; padding-top: 8px; }
@@ -351,7 +362,11 @@
         <div class="attack-beam" id="attack-beam"><div class="pulse-dot"></div></div>
         <div class="clash-col" id="target-col"><div class="patch-grid" id="target-grid"></div></div>
       </div>
-      <div class="breach-count-line" id="breach-count-line" hidden>外網 <span id="breach-count-external">0/0</span>　內網 <span id="breach-count-internal">0/0</span></div>
+      <div class="breach-count-title" id="breach-count-title" hidden><span class="breach-count-dot"></span>紅隊入侵數量</div>
+      <div class="breach-count-line" id="breach-count-line" hidden>
+        <span><span class="breach-count-label">外網</span><span class="breach-count-value" id="breach-count-external">0/0</span></span>
+        <span><span class="breach-count-label">內網</span><span class="breach-count-value" id="breach-count-internal">0/0</span></span>
+      </div>
       <div class="breach-legend" id="breach-legend" hidden><span class="dot"></span>疑似突破</div>
     </div>
 
@@ -401,14 +416,14 @@
     <div class="shell" style="box-shadow:0 0 0 1px #3f2430;">
       <div class="shell-head" style="background:#1d1220; border-color:#3f2430;">
         <span class="dot" style="background:#ff4d5e; box-shadow:0 0 12px #ff4d5e;"></span>
-        <span class="title" style="color:#ff8f99;">紅隊終端機　RED SHELL</span>
+        <span class="title" style="color:#ff8f99;">RED SHELL</span>
       </div>
       <div class="shell-body" id="red-shell"></div>
     </div>
     <div class="shell" style="box-shadow:0 0 0 1px #1f3450;">
       <div class="shell-head" style="background:#101c2c; border-color:#1f3450;">
         <span class="dot" style="background:#4da6ff; box-shadow:0 0 12px #4da6ff;"></span>
-        <span class="title" style="color:#8ec6ff;">藍隊監控日誌　BLUE SHELL</span>
+        <span class="title" style="color:#8ec6ff;">BLUE SHELL</span>
       </div>
       <div class="shell-body" id="blue-shell"></div>
     </div>
@@ -895,7 +910,13 @@
     var showSuspected = realCount > 0 && (externalCount > 0 || internalCount > 0);
     var suspectedExternal = showSuspected ? Math.min(externalCount, count) : 0;
     var suspectedInternal = showSuspected ? Math.min(internalCount, count) : 0;
-    document.getElementById("breach-count-line").hidden = !showSuspected;
+    // 數字列（外網/內網 X/Y）改成只要有真的席位資料就顯示，不綁
+    // showSuspected——沒有疑似突破時顯示 0/Y 也是有意義的資訊（有幾台
+    // 靶機、目前 0 台被突破），不該整排藏起來看起來像壞了。小字圖例
+    // （單純講「疑似突破」四個字的說明文字）維持跟 showSuspected 綁，
+    // 沒有疑似突破時不需要解釋這個詞。
+    document.getElementById("breach-count-title").hidden = realCount === 0;
+    document.getElementById("breach-count-line").hidden = realCount === 0;
     document.getElementById("breach-legend").hidden = !showSuspected;
     // count 是目前畫出來的靶機格總數（分母），suspectedExternal／
     // suspectedInternal 是被點亮的格數（分子）——跟格子本身點亮的數量
