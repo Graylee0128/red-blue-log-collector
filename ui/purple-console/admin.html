@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Purple Console 管理工具</title>
+<style>
+  /* 跟 index.html 同一組色彩 token，維持視覺一致——但這頁刻意不從公開
+     戰況板連結過來，只有知道網址的人（紫隊自己）才會開到。issue #38
+     選項 2：一鍵清場，破壞性操作，需要 token 才能觸發，不能公開曝露。 */
+  :root {
+    --color-bg: #0b0d14;
+    --color-surface: #232532;
+    --color-text: #e9e9ed;
+    --color-accent: #9184d9;
+    --color-divider: color-mix(in srgb, #e9e9ed 16%, transparent);
+    --color-neutral-400: #b2b6ca;
+    --color-neutral-500: #9397ab;
+    --color-neutral-700: #595d6c;
+    --color-neutral-800: #3f424d;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--color-bg); color: var(--color-text); }
+  body {
+    font-family: 'Inter', 'Noto Sans TC', system-ui, sans-serif;
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    padding: 20px;
+  }
+  .card {
+    width: 100%; max-width: 420px; background: var(--color-surface);
+    border-radius: 14px; box-shadow: 0 0 0 1px var(--color-neutral-800), 0 6px 18px rgba(0,0,0,0.55);
+    padding: 28px;
+  }
+  h1 { font-size: 20px; margin: 0 0 4px; }
+  .sub { font-size: 14px; color: var(--color-neutral-500); margin: 0 0 24px; }
+  label { display: block; font-size: 13px; color: var(--color-neutral-400); margin-bottom: 6px; }
+  input {
+    width: 100%; padding: 10px 12px; margin-bottom: 16px; border-radius: 8px;
+    border: 1px solid var(--color-neutral-700); background: var(--color-bg); color: var(--color-text);
+    font-size: 14px; font-family: inherit;
+  }
+  input:focus { outline: 2px solid var(--color-accent); outline-offset: -1px; }
+  button {
+    width: 100%; padding: 12px; border-radius: 8px; border: none;
+    background: #ff4d5e; color: white; font-size: 15px; font-weight: 600;
+    cursor: pointer;
+  }
+  button:hover { background: #ff6b78; }
+  button:disabled { background: var(--color-neutral-700); cursor: not-allowed; }
+  .status { margin-top: 14px; font-size: 13px; min-height: 18px; }
+  .status.ok { color: #6ee7a2; }
+  .status.err { color: #ff9aa4; }
+  .warn {
+    font-size: 13px; color: #ffd76a; background: #3a2f16; border: 1px solid #ffd76a;
+    border-radius: 8px; padding: 10px 12px; margin-bottom: 20px;
+  }
+</style>
+</head>
+<body>
+
+<div class="card">
+  <h1>清除本局資料</h1>
+  <p class="sub">TRUNCATE 六張表（紅藍隊事件、藍隊分數、疑似突破、席位清單），準備下一局用。</p>
+
+  <div class="warn">
+    這是破壞性操作，清掉就找不回來。只清資料庫——Metis host 端的
+    leaderboard／seat log 殘留檔不會動（唯讀掛載，不在這個工具權限內），
+    如果那些檔案還在，下一輪輪詢可能會把舊資料寫回來。
+  </div>
+
+  <label for="api-base">Collector API 位址</label>
+  <input id="api-base" type="text" placeholder="http://<host>:8001">
+
+  <label for="token">INGEST_TOKEN</label>
+  <input id="token" type="password" placeholder="貼上共用 token">
+
+  <button id="clear-btn">清除本局資料</button>
+  <div class="status" id="status-msg"></div>
+</div>
+
+<script>
+  // 跟 index.html 的 defaultApiBase() 同一套邏輯，先自動填一個合理的猜測，
+  // 使用者仍然可以手動改——這頁只有知道網址的紫隊自己會開，不像公開戰況板
+  // 需要完全零設定。
+  function defaultApiBase() {
+    var host = window.location.hostname || "localhost";
+    return "http://" + host + ":8001";
+  }
+
+  var apiInput = document.getElementById("api-base");
+  var tokenInput = document.getElementById("token");
+  var btn = document.getElementById("clear-btn");
+  var statusMsg = document.getElementById("status-msg");
+
+  apiInput.value = defaultApiBase();
+
+  function setStatus(state, text) {
+    statusMsg.className = "status " + (state || "");
+    statusMsg.textContent = text;
+  }
+
+  btn.addEventListener("click", async function () {
+    var apiBase = apiInput.value.trim().replace(/\/$/, "");
+    var token = tokenInput.value.trim();
+    if (!apiBase || !token) {
+      setStatus("err", "API 位址跟 token 都要填。");
+      return;
+    }
+    // 破壞性操作，二次確認——沒有 undo，點錯要有機會反悔。
+    if (!confirm("確定要清除本局所有資料嗎？這個動作無法復原。")) {
+      return;
+    }
+
+    btn.disabled = true;
+    setStatus("", "清除中…");
+    try {
+      var res = await fetch(apiBase + "/admin/clear", {
+        method: "POST",
+        headers: { "Authorization": "Bearer " + token },
+      });
+      if (res.status === 401) {
+        setStatus("err", "Token 不對，被拒絕了。");
+        return;
+      }
+      if (!res.ok) {
+        throw new Error("HTTP " + res.status);
+      }
+      setStatus("ok", "已清除，戰況板下次輪詢就會顯示乾淨畫面。");
+    } catch (err) {
+      setStatus("err", "清除失敗：" + err.message + "（確認 API 位址、CORS）");
+    } finally {
+      btn.disabled = false;
+    }
+  });
+</script>
+
+</body>
+</html>

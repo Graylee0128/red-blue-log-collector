@@ -287,6 +287,21 @@ class EventStore:
             rows = conn.execute("SELECT seat FROM red_seats ORDER BY seat").fetchall()
         return [seat for (seat,) in rows]
 
+    def clear_all(self) -> None:
+        """issue #38 選項 2：一鍵清空目前所有演練資料（六張表全部
+        TRUNCATE），準備下一局用。不動 host 端的 leaderboard/seat log 檔案
+        ——那些不在這個容器的寫入權限範圍內（volume mount 是唯讀），是
+        Metis 那邊的責任，不是這個方法要解決的範圍（見 issue #38 討論）。
+        清完資料庫後，如果 host 上還留著舊檔案，seat-log-receiver／
+        blue-score-receiver 下一輪輪詢還是會把舊資料重新寫回來——這是
+        已知限制，要靠 Metis 那邊在開新一局時清掉自己的殘留檔案。"""
+        with self._connect() as conn:
+            conn.execute(
+                "TRUNCATE TABLE normalized_events, raw_events, blue_scores, "
+                "possible_breaches, blue_seats, red_seats RESTART IDENTITY CASCADE"
+            )
+            conn.commit()
+
     def list_events(self, team: str | None = None, limit: int = 200) -> list[dict[str, Any]]:
         limit = max(1, min(limit, 5000))
         with self._connect() as conn:
