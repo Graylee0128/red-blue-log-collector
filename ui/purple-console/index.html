@@ -860,6 +860,20 @@
   var PAIR_WIDTH_RATIO = 2.45; // 一對＝兩顆格子＋一條連接線（見 .patch-link 的 calc(0.45)）
   var FIXED_COLS = 2; // 固定兩欄，不隨數量/空間變動——排數＝ceil(count/2)，機器數平分到每排
 
+  // /blue-scores、/blue-seats 給的是「容器」清單（blue-a-01／blue-b-01各
+  // 一筆），但一個靶機格代表的是「一個座位」——外網（blue-a）／內網
+  // （blue-b）是同一個座位的兩台機器，不是兩個座位。直接拿原始筆數當格數
+  // 會把每個座位算兩次（5 個座位變成 10 格）。這裡去掉 blue-[ab]- 字首、
+  // 只留座位編號去重，才是真正的座位數。
+  function distinctBlueSeatCount(names) {
+    var seen = {};
+    (names || []).forEach(function (name) {
+      var seatNo = String(name || "").replace(/^blue-[ab]-/, "");
+      if (seatNo) seen[seatNo] = true;
+    });
+    return Object.keys(seen).length;
+  }
+
   function fitCellLayout(count) {
     var col = document.getElementById("target-col");
     var availW = col.clientWidth || 140;
@@ -894,11 +908,15 @@
     // 資料，見下面 renderBlueProgress）——舊版用
     // distinctDestinationCount(correlations) 只算紅隊「已經打過」的
     // destination，演練剛開始、紅隊還沒出手時永遠是 0，格子看起來一直
-    // 是空的。lastBlueSeatCount（/blue-seats，掃 seat log 目錄）比
-    // lastBlueScores.length（/blue-scores，只有真的回報分數的席位）
-    // 更準——同樣是 auto_watch.sh 沒涵蓋 blue-b-* 的已知限制，取兩者
-    // 較大值兜底。
-    var realCount = Math.max(lastBlueScores.length, lastBlueSeatCount);
+    // 是空的。lastBlueSeatNames（/blue-seats，掃 seat log 目錄）比
+    // lastBlueScores（/blue-scores，只有真的回報分數的席位）更準——同樣
+    // 是 auto_watch.sh 沒涵蓋 blue-b-* 的已知限制，取兩者較大值兜底。
+    // 兩邊都是「容器」清單（blue-a-NN／blue-b-NN 各一筆），要先用
+    // distinctBlueSeatCount 去重成「座位」數，不然一個座位會被算成兩格。
+    var realCount = Math.max(
+      distinctBlueSeatCount(lastBlueScores.map(function (s) { return s.target; })),
+      distinctBlueSeatCount(lastBlueSeatNames)
+    );
     var count = realCount || BREACH_GRID_FALLBACK;
     // 來源格總數（左邊）改用真實紅隊席位數（/red-seats，跟藍隊那組對稱，
     // seat_log_receiver.py 順手記）——不再跟右邊的靶機數綁死（見使用者
@@ -1034,6 +1052,9 @@
   // 重複使用。
   var lastBlueScores = [];
   var lastBlueSeatCount = 0;
+  // /blue-seats 的原始容器名稱清單（不只是筆數）——renderBreachPanel 的
+  // distinctBlueSeatCount 要拿名稱才能去重出真正的座位數，見該處註解。
+  var lastBlueSeatNames = [];
 
   // scores 是 /blue-scores 回傳的整批席位清單（每個席位一筆 {total_score,
   // max_score, checks}）。這面板刻意設計成不用人操作，多席位時只顯示
@@ -1132,8 +1153,10 @@
       if (!seatRes.ok) throw new Error("HTTP " + seatRes.status);
       var seats = await seatRes.json();
       totalSeats = seats.length;
+      lastBlueSeatNames = seats;
     } catch (err) {
       totalSeats = 0; // 抓不到就退回只用 scores.length 當分母，不影響分數本身
+      lastBlueSeatNames = [];
     }
     renderBlueProgress(scores, totalSeats);
   }
