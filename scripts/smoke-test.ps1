@@ -5,7 +5,7 @@
 .DESCRIPTION
   Brings up postgres + collector, waits for /healthz, POSTs the sample
   red/blue events from examples/, and asserts the full pipeline actually
-  produces a correlated "hit" with 5000ms latency on /timeline and /analysis.
+  produces a correlated "hit" with 5000ms latency on /analysis.
 
   Requires Docker Desktop running. Run from the repo root:
 
@@ -70,11 +70,6 @@ $blueEvent = Get-Content "$RepoRoot/examples/blue-event.json" -Raw
 $blueResp = Invoke-RestMethod -Uri "$BaseUrl/ingest/blue" -Method Post -ContentType "application/json" -Headers $AuthHeaders -Body $blueEvent
 if ($blueResp.inserted -ne $true) { Fail "blue event was not inserted: $($blueResp | ConvertTo-Json -Depth 5)" }
 Write-Host "blue event inserted: $($blueResp.event.event_id)" -ForegroundColor Green
-
-Write-Host "== GET /timeline ==" -ForegroundColor Cyan
-$timeline = Invoke-RestMethod -Uri "$BaseUrl/timeline" -Method Get
-if ($timeline.Count -lt 2) { Fail "expected >=2 events on timeline, got $($timeline.Count)" }
-Write-Host "timeline has $($timeline.Count) event(s)" -ForegroundColor Green
 
 Write-Host "== GET /analysis ==" -ForegroundColor Cyan
 $analysis = Invoke-RestMethod -Uri "$BaseUrl/analysis" -Method Get

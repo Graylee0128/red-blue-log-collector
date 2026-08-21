@@ -7,7 +7,7 @@ Core Event schema 完全無耦合（只吃可注入的 fetch/match/clock/sleep �
 所以直接套用在 rbcollector 的 NormalizedEvent 形狀的 dict 上也成立。是測試
 工具，不是服務：放在 `tests/` 底下，不進 `src/rbcollector/`。
 
-這裡等的管路是非同步的（ingest -> adapter -> Postgres -> /timeline），
+這裡等的管路是非同步的（ingest -> adapter -> Postgres -> /analysis），
 測試不能立刻斷言，也不能 `sleep(30)` 賭運氣。輪詢有 `timeout_s` 上限，
 逾時一定拋出明確的例外，不會無窮迴圈——沒有死鎖風險。
 """

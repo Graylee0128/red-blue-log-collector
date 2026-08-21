@@ -498,9 +498,13 @@
     "T1048": "資料外洩"
   };
 
-  // event_type 的中文對照——藍隊實際只會出現這兩種（syslog_receiver.py／
-  // forward-blue-authlog.sh 兩個真實來源都只送 blue.log／blue.alert），
-  // red.action 是紅隊沒命中規則時的預設值。沒對照到就顯示原始字串。
+  // event_type 的中文對照——藍隊實際來源是 seat_log_receiver.py（cmdlog，
+  // 一律 blue.event）跟 blue_score_receiver.py（checker.py 驗證過的修補，
+  // blue.remediation，時間軸上不用這個字典顯示，見 buildAllActions() 的
+  // 「事後應對」/「主動修補」文字）。blue.log／blue.alert 是舊版
+  // syslog_receiver.py／forward-blue-authlog.sh 留下的字典項，那兩個來源
+  // 都已經拿掉，保留字典項只是防萬一舊資料還在。red.action 是紅隊沒命中
+  // 規則時的預設值。沒對照到就顯示原始字串。
   var EVENT_TYPE_LABELS = {
     "blue.alert": "已標記告警",
     "blue.log": "一般紀錄",

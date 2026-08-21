@@ -102,11 +102,6 @@ def possible_breaches() -> list[dict[str, Any]]:
     return store.list_possible_breaches()
 
 
-@app.get("/timeline")
-def timeline(limit: int = Query(500, ge=1, le=5000)) -> list[dict[str, Any]]:
-    return store.list_events(team=None, limit=limit)
-
-
 @app.get("/analysis")
 def analysis(
     limit: int = Query(5000, ge=1, le=20000),

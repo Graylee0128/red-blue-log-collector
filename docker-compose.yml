@@ -102,31 +102,6 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
-  # 紫隊 Grafana 介面：只接現有 collector Postgres（見 deploy/grafana/provisioning/
-  # datasources/datasources.yaml），不含 cyber 那條 Loki/Prometheus log/metric pipeline。
-  grafana:
-    image: grafana/grafana:11.2.0
-    environment:
-      GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      # 沒開這兩個，之後有任何頁面想嵌 Grafana 面板都會撞到 cyber 那邊記過的同一個坑：
-      # Grafana 預設拒絕被嵌 iframe（X-Frame-Options: deny），且未登入直接
-      # 跳登入牆，iframe 裡的使用者連帳密在哪都不知道。
-      GF_SECURITY_ALLOW_EMBEDDING: "true"
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
-    volumes:
-      - ./deploy/grafana/provisioning:/etc/grafana/provisioning:ro
-    ports:
-      - "3000:3000"
-    depends_on:
-      postgres:
-        condition: service_healthy
-    restart: unless-stopped
-
-  # 獨立的 Battleboard 風格戰況板頁面（跟 8001/ui/purple、/ui/battleboard 那套
-  # cyber 沿革的分頁式介面並存，用途不同：這個是給投影/大螢幕看戰況用的，
-  # 資料是打 collector 的 /analysis API，不是自己算的）。純靜態頁，沒有後端。
   purple-console:
     image: nginx:1.27-alpine
     volumes:

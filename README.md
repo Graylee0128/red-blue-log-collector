@@ -1,38 +1,127 @@
 # Red/Blue Log Collector
 
-Standalone Red/Blue telemetry collector extracted from patterns already implemented in `Graylee0128/cyber`.
+紫隊獨立收集器，接紅／藍雙方的原始資料，正規化成同一套方便關聯比對的事件格式，再把整合後的時間軸提供給後續分析／投影使用。
 
-The goal is deliberately narrow: accept two team interfaces, preserve their raw payloads, normalize both into one correlation-friendly event contract, and expose a merged timeline for later analysis.
+## 從 `cyber` 沿用了什麼
 
-## What was reused from `cyber`
+這個 repo 不是從零重寫，保留了 `cyber` Purple 那套已經驗證過的邊界：
 
-This repository is not a greenfield rewrite. It keeps the useful boundaries already proven in the `cyber` Purple pipeline:
-
-- **HTTP receiver boundary** from `src/purple/receiver/server.py`
-- **adapter isolation** from `src/purple/receiver/adapters.py`
-- **event-id + normalization pattern** from `src/purple/receiver/core.py`
-- **four-field telemetry contract** from `src/purple/telemetry_fields.py`
+- **HTTP 接收邊界**（來自 `src/purple/receiver/server.py`）
+- **adapter 隔離**（來自 `src/purple/receiver/adapters.py`）
+- **event-id ＋ 正規化模式**（來自 `src/purple/receiver/core.py`）
+- **四欄位遙測契約**（來自 `src/purple/telemetry_fields.py`）
   - `source_ip`
   - `destination`
   - `time` → `observed_at`
   - `action_result`
-- **PostgreSQL event storage + idempotency pattern** from `src/purple/store/events.py`
-- **Dockerized receiver pattern** from `deploy/receiver/Dockerfile`
+- **PostgreSQL 事件儲存＋冪等模式**（來自 `src/purple/store/events.py`）
+- **Docker化 receiver 模式**（來自 `deploy/receiver/Dockerfile`）
 
-Cyber-range-specific concepts (exercise/scenario, Grafana webhook lifecycle, response agent, Falco rules, disclosure/visibility) were intentionally removed from this standalone collector.
+Cyber-range 特有的概念（exercise/scenario、Grafana webhook 生命週期、response agent、Falco 規則、disclosure/visibility）刻意沒有搬進這個獨立收集器。
 
-## Run
+## 啟動
 
 ```bash
 docker compose up -d --build
 curl http://localhost:8001/healthz
 ```
 
-API docs:
+API 文件：
 
 ```text
 http://localhost:8001/docs
 ```
+
+**單純 `docker compose up -d --build` 不夠**，還需要：
+
+1. **`docker-compose.override.yml`**（或設 `METIS_BLUE_SCORE_HOST_DIR` 環境變數）——指向 Metis `checker.py`/`auto_watch.sh` 真正執行時所在的目錄（見下方[藍隊計分接收器](#藍隊計分接收器)），不設的話藍隊修補進度永遠是空的，且不會報錯。
+2. **Metis 那邊要先起來**：`/var/log/metis/seat` 目錄要真的存在且可讀，這是 Metis 部署（`install.sh red/blue`）先跑完才會有的，順序上 Metis 要先起，我們的 collector 才有東西可讀。
+3. **`checker.py --loop <秒數>` 要對每個藍隊席位各自手動起一支**（目前沒有接進任何自動化流程，見 [se-218/Metis#137](https://github.com/se-218/Metis/issues/137)）：
+
+   ```bash
+   cd <Metis>/blue/scoring-engine
+   sudo python3 checker.py <target> --loop 15   # 要 sudo，checker.py 靠 docker exec 判定，沒有 docker 群組權限會全部誤判成 fail
+   ```
+
+## Purple Console（投影戰況板）
+
+```bash
+docker compose up -d --build purple-console
+```
+
+開 `http://<host>:8090`。純靜態頁面（沒有自己的後端），由獨立 nginx container 提供，跟 collector API 分開。每 3 秒輪詢一次 `GET /analysis`，全部面板都是真資料，沒有 demo/mock：
+
+- **攻防事件關聯時間軸**：四色分類——快速應對（綠，1 分鐘內事後應對）／延遲應對（紫，超過 1 分鐘）／主動修補（藍，紅隊完全沒動作、藍隊自己抓到並修好）／未被偵測（紅色虛線）。這個場景藍隊沒有自動告警機制，「應對速度」是照藍隊實際的人工反應時間分類，不是「告警速度」。
+- **紅隊攻擊拓樸**（左側）：紅隊來源格＋藍隊靶機格（外網/內網成對），疑似突破（靠 `breach_detector.py` 用終端機標題跳脫序列做的啟發式 pivot 偵測）時亮紅燈＋光束動畫。
+- **藍隊整體修補進度**（右側）：checker.py 判分結果（7 項漏洞修補檢查，5 公開＋2 隱藏加分題），格子逐項顯示通過席位數。
+- **Red Shell／Blue Shell**：兩隊終端機打過的原始指令，直接讀 seat log。
+- **頂列統計**：應對（藍隊應對數／紅隊事件數）、快速應對、修補（應對＋主動修補加總）、反應時間。
+- **`admin.html`**（獨立管理頁，故意不從 `index.html` 連結過去）：`/admin/clear` 一鍵清空六張表，開新的一局演練前用，需要 `INGEST_TOKEN`。
+
+### 時間軸什麼時候會出現一列
+
+關聯邏輯（[`analysis.py`](src/rbcollector/analysis.py) 的 `correlate()`）只認兩種來源，缺一不可：
+
+- **任何紅隊事件**——只要紅隊終端機打過任何一行指令（不管內容、不管有沒有意義），就會產生一列，狀態預設是「未被偵測」（紅色虛線），除非後續配對到藍隊回應：
+  - **快速應對／延遲應對**（`hit`，`detection_method="response"`）：紅隊事件之後 **5 分鐘內**，同時出現兩種訊號才算數——(1) 藍隊 cmdlog 含關鍵字（`chmod`／`chown`／`iptables`／`ufw`／`firewall-cmd`／`nft `／`drop`／`deny`／`block`／`rm -f`／`delete from`／`sudoers`），(2) checker.py 真的驗到某項檢查從 fail 翻 pass（`blue.remediation` 事件）。缺一不可——單靠關鍵字可能是打錯指令根本沒修好，單靠 checker.py 通過不知道是不是跟這次紅隊行動有關。1 分鐘內算快速，超過算延遲。
+  - **快速偵測／延遲偵測**（`detection_method="alert"`，即時告警路徑）：目前這個場景**完全用不到**，藍隊沒有自動告警機制，這條路徑是死的，保留給以後真的接上告警系統。
+- **藍隊主動修補**（`hit`，`detection_method="autonomous"`，`red` 是 `null`）：紅隊完全沒動作也會出現——只要藍隊自己抓到並修好一項漏洞（一樣要求 cmdlog 關鍵字 + `blue.remediation` 雙訊號都在 5 分鐘窗口內），不需要任何紅隊事件觸發。
+
+**不會觸發任何東西的情況**（Blue Shell 看得到打字內容，但時間軸不會有任何反應）：
+- 藍隊隨便打字、沒有真的修東西——沒有 checker.py 驗證通過，不算數。
+- 對一個**已經合規**的檔案下 `chmod`（例如檔案權限本來就對）——指令文字符合關鍵字，但 checker.py 不會有 fail→pass 的轉換，不會產生 `blue.remediation`。
+- 純紅隊活動、沒有任何藍隊訊號——會產生「未被偵測」列（紅色虛線），不是完全沒反應，但也不算「應對」。
+
+### 前端額外過濾（不影響資料庫，只影響畫面）
+
+Purple Console 的時間軸另外套了兩層跟資料品質有關的過濾（`ui/purple-console/index.html`），資料庫本身完整保留，不受影響：
+
+- `isNoiseMessage()`：純數字或同一字元重複 ≥3 次的紅隊訊息（如打字測試留下的 `123456`）不顯示。
+- `collapseBursts()`：同一來源在 5 秒內連續出現多筆事件，只保留最後一筆——偶爾會看到一次操作被切成好幾筆殘缺片段（如 `y`／`pyh`／`yp` 才接著出現完整的指令），這支是治標的緩解，不是治本（根因還沒定案，見已關閉的 [issue #39](../../issues/39) 討論），也可能誤合併真的連續快打的不同指令，是接受的取捨。
+
+## 紅／藍隊真實資料來源
+
+Metis 把紅／藍隊終端機的操作直接寫到 host 端檔案（`/var/log/metis/seat/<seat>.cmd`），[`seat_log_receiver.py`](src/rbcollector/seat_log_receiver.py) 直接 tail 那個目錄（唯讀掛載進 `seat-log-receiver` container）——不用 forwarder 腳本、不用 `/ingest/*`、不用 bearer token。隊伍別（紅/藍）從檔名判斷（`red-*.cmd` vs `blue-{a,b}-*.cmd`）。
+
+[`blue_score_receiver.py`](src/rbcollector/blue_score_receiver.py) 對藍隊計分做一樣的事——見下方[藍隊計分接收器](#藍隊計分接收器)。
+
+[`breach_detector.py`](src/rbcollector/breach_detector.py) 也是同一套「直接讀 Metis 自己的檔案」模式，tail `red-*.out`（終端機錄影），靠 OSC 跳脫序列（`ESC ] 0 ; user@host: cwd BEL`）判斷紅隊有沒有換過終端機視窗標題，heuristically 推論有沒有 pivot 到別台主機——純推論，不是確認過的攻擊成功事件。
+
+
+## 藍隊計分接收器
+
+Metis 的藍隊計分（`blue/scoring-engine/checker.py`，每席 7 項漏洞修補檢查，5 公開＋2 隱藏加分題，每題 20 分）也沒有 API——每次重新檢查會把結果寫進 host 端的 `leaderboard_<target>.json`。[`src/rbcollector/blue_score_receiver.py`](src/rbcollector/blue_score_receiver.py) 直接輪詢那個目錄（跟 seat log receiver 同一套「讀 Metis 自己的檔案」模式），並套用 `checker.py` 自己在推分數進來賓容器前用的**同一套**洩題過濾：2 題隱藏加分題在 5 題公開題全過之前，`GET /blue-scores` 不會吐出來，這支 API 可以公開曝露。
+
+```bash
+docker compose up -d --build blue-score-receiver
+```
+
+**`BLUE_SCORE_DIR` 一定要對到 `checker.py`/`auto_watch.sh` 實際執行時所在的目錄**——`checker.py` 寫檔用純相對路徑（`leaderboard_<target>.json`，沒有 `--out`/`--dir` 參數），實際落在誰手動執行當下的工作目錄，Metis 自己的部署流程也沒有固定這個慣例（見 [se-218/Metis#137](https://github.com/se-218/Metis/issues/137)）。`docker-compose.yml` 內建的預設值只是我們自己編的暫定值，對不上的話這條資料會整場收不到，**且不會報錯**（對不存在的目錄只記警告）。
+
+建議做法：建一份沒進版控的 `docker-compose.override.yml`：
+
+```yaml
+services:
+  blue-score-receiver:
+    environment:
+      BLUE_SCORE_DIR: /home/<user>/Metis/blue/scoring-engine
+    volumes:
+      - /home/<user>/Metis/blue/scoring-engine:/home/<user>/Metis/blue/scoring-engine:ro
+```
+
+或直接設環境變數 `METIS_BLUE_SCORE_HOST_DIR`（`docker-compose.yml` 已經支援 `${METIS_BLUE_SCORE_HOST_DIR:-/var/lib/metis/blue-scores}`）。
+
+`checker.py` 本身也要記得幫**每個**藍隊席位各自起一支 `--loop`（見上方[啟動](#啟動)），漏開哪個席位不會報錯，那個席位就悄悄一直是 0 分。
+
+## 開放給其他 VM 存取
+
+`docker-compose.yml` 的 `"8001:8000"` port mapping 已經綁到 collector host 上的所有網卡，不只 `localhost`——只要 host 防火牆/安全群組放行這個 port，同網段的來源 VM 就連得到。真的要對外開放前，還缺（見 [issue #1](../../issues/1)）：
+
+1. **設共用 bearer token**：`docker compose up` 之前先 export `INGEST_TOKEN`（`docker-compose.yml` 會直接傳進去）。沒設的話 `/ingest/*` 不驗證任何請求（僅適合本機/開發環境）——任何連得到這個 port 的人都能寫假事件。設了之後，每個 `POST /ingest/*` 都要帶 `Authorization: Bearer <token>`，沒帶會回 `401`。
+2. **只對來源 VM 開 port**，不要對 `0.0.0.0/0` 開。
+3. **從 VM 送 log**：Metis 真實 log 格式現在已知了，這個 collector 直接讀（見上方[紅／藍隊真實資料來源](#紅藍隊真實資料來源)），這條路徑不再需要通用的 tail-and-POST 轉送腳本，只有 Metis 沒辦法直接讓 collector 讀到檔案的資料源才需要另外寫一支。
+
+**目前不打算採用**：[issue #2](../../issues/2) 提議把這套 HTTP-push 模式換成 cyber 的 Alloy/Loki tail-and-ship pipeline。那套機制更成熟，但也連帶引出「這個收集器的 Postgres／`/analysis` 那半要不要繼續存在」這個更大的問題，細節見該 issue。目前決定：維持現有的 ingestion 路徑（bearer-token HTTP push），因為改動較小，而且這個 repo 的關聯/MTTD 邏輯沒有明顯的 Loki 對應做法。等到原始 log 量或多方消費需求（例如某個儀表板工具也想要同一份 log）大到值得投資共用 Loki 後端時再重新評估。
 
 ## Smoke test
 
@@ -40,251 +129,49 @@ http://localhost:8001/docs
 pwsh scripts/smoke-test.ps1
 ```
 
-Brings the stack up, POSTs [`examples/red-event.json`](examples/red-event.json)
-and [`examples/blue-event.json`](examples/blue-event.json), and asserts the
-full pipeline actually produces a correlated `hit` on `/timeline` and
-`/analysis` — not just a 200 on ingest.
-
-## Red ingestion
-
-```bash
-curl -X POST http://localhost:8001/ingest/red \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $INGEST_TOKEN" \
-  -d '{
-    "timestamp":"2026-08-17T11:00:00+08:00",
-    "src_ip":"10.0.0.10",
-    "target_ip":"10.0.0.20",
-    "command":"nmap -sV 10.0.0.20",
-    "result":"ok"
-  }'
-```
-
-## Blue ingestion
-
-```bash
-curl -X POST http://localhost:8001/ingest/blue \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $INGEST_TOKEN" \
-  -d '{
-    "time":"2026-08-17T11:00:05+08:00",
-    "attacker_ip":"10.0.0.10",
-    "host":"web-01",
-    "alert":"Port scan detected",
-    "severity":"high"
-  }'
-```
-
-The `Authorization` header is only enforced when the collector's `INGEST_TOKEN`
-environment variable is set (see [Exposing to other VMs](#exposing-to-other-vms)).
-It's unset by default, so local/dev requests without a token still work.
-
-## Query merged timeline
-
-```bash
-curl 'http://localhost:8001/timeline?limit=500'
-```
-
-Or one side only:
-
-```bash
-curl 'http://localhost:8001/events?team=red'
-curl 'http://localhost:8001/events?team=blue'
-```
-
-## Grafana
-
-```bash
-docker compose up -d --build grafana
-```
-
-Open `http://<host>:3000` (default login `admin`/`admin`). The `Purple
-Collector Postgres` data source is provisioned automatically from
-[`deploy/grafana/provisioning/datasources/datasources.yaml`](deploy/grafana/provisioning/datasources/datasources.yaml)
-and points at the `collector` Postgres above — build SQL panels against the
-`normalized_events` / `raw_events` tables there.
-
-This is **not** a drop-in for cyber's Blue SOC dashboard: that one queries
-Loki/Prometheus, which this standalone stack does not run. Dashboards here
-need to be built fresh against the Postgres schema.
-
-**Disclosure boundary applies here too.** `GF_AUTH_ANONYMOUS_ENABLED=true`
-means anyone who can reach `:3000` sees provisioned dashboards with no
-login — and Grafana's Postgres datasource queries `normalized_events`
-directly, bypassing the collector API entirely, so `require_purple_clearance`
-(see [Authentication](docs/INTERFACE_CONTRACT.md#authentication)) does not
-apply to it. Any panel built here must not query raw per-event detail
-(`message`, `actor`, `source_ip`, `destination`, ...) without a `WHERE`
-clause that keeps it to safe-to-publish rows — see the provisioned
-`purple-collector-overview` dashboard's "最新藍隊偵測事件" panel for the
-pattern (blue-team rows that read as a detection only; never a bare red
-action, which is exactly what a `visibility_gap` is). Aggregate-only panels
-(counts, distributions, timeseries) don't need this restriction.
-
-## Purple Console (battleboard)
-
-```bash
-docker compose up -d --build purple-console
-```
-
-Open `http://<host>:8090`. A standalone, self-contained battleboard page
-(no external JS/CSS deps beyond Google Fonts, no backend of its own) —
-served by its own nginx container, separate from the collector API. This
-is the only front-end in the repo now; the cyber-derived `/ui/purple/`
-and `/ui/battleboard/` (a tabbed analyst console served by the collector
-itself) were kept side-by-side for comparison and then removed — see
-`docs/COPY_FROM_CYBER.md` if that lineage matters later.
-
-The top stat row and the center correlation timeline are **real** —
-polled from `GET /analysis?caller=purple` every 8s (set the collector API
-URL and, if `INGEST_TOKEN` is configured, a bearer token in the controls
-bar; both persist in `localStorage`). Everything else on the board — the
-attacker/external/internal topology, the blue patch grid/score, the
-red/blue shell tails — has **no backing data model yet** and stays
-demo/mock, clearly labeled as such on each panel. Wiring those up for real
-needs: an IP-to-role mapping (attacker vs. DMZ vs. internal), a real
-scoring source, and a raw-log-tail endpoint respectively.
-
-`caller=purple` matters here specifically because `detection_gap` /
-`visibility_gap` rows are purple-clearance-only (see the disclosure note
-above) — with `caller=public` (or no token when `INGEST_TOKEN` is set) the
-timeline would only ever show hits, silently hiding every gap, which
-defeats the point of a gap-visibility board.
-
-## Exposing to other VMs
-
-`docker-compose.yml`'s `"8001:8000"` port mapping already binds to all
-interfaces on the collector host, not just `localhost` — a source VM on the
-same network can already reach it once the host firewall/security group
-allows the port. What's missing before doing that for real (see
-[issue #1](../../issues/1)):
-
-1. **Set a shared bearer token.** Export `INGEST_TOKEN` before `docker compose
-   up` (it's passed through by `docker-compose.yml`). While unset, `/ingest/*`
-   accepts unauthenticated requests (local/dev only) — anyone who can reach
-   the port can write fake events. Once set, every `POST /ingest/*` call must
-   send `Authorization: Bearer <token>`; requests without it get `401`.
-2. **Open the port** for the source VM(s) specifically, not `0.0.0.0/0`.
-3. **Ship logs from the VM.** [`scripts/forwarder-template.sh`](scripts/forwarder-template.sh)
-   is a minimal starting point (tail a log file, POST each line with the
-   bearer token) per issue #1's Option A. It sends `{"message": line, ...}` —
-   replace that payload construction with real field mapping once the actual
-   Red/Blue log format is known, using the aliases in
-   [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md).
-
-**Not adopted (for now):** [issue #2](../../issues/2) proposed replacing this
-HTTP-push model with cyber's Alloy/Loki tail-and-ship pipeline. That's a more
-proven mechanism, but it also raises the open question of whether this
-collector's Postgres/`/analysis` half should keep existing at all — see the
-issue for the full tradeoff. Decision: keep this collector's ingestion path
-as-is (bearer-token HTTP push, per Option A) since it's the smaller change and
-this repo's correlation/MTTD logic doesn't have an obvious Loki equivalent.
-Revisit if/when raw-log volume or multi-consumer needs (e.g. Grafana wanting
-the same logs) make a shared Loki backend worth the added infra.
-
-## Real log source forwarders
-
-Two concrete forwarders, built on the `forwarder-template.sh` pattern, for
-the actual log sources currently in use:
-
-- [`scripts/forward-red-bash-history.sh`](scripts/forward-red-bash-history.sh)
-  — red-team command log → `/ingest/red`. Plain `~/.bash_history` isn't
-  reliable to tail live (it's only flushed periodically); the script's
-  header comment includes a `PROMPT_COMMAND` snippet to log each command
-  with a timestamp as it runs.
-- [`scripts/forward-blue-authlog.sh`](scripts/forward-blue-authlog.sh) —
-  `/var/log/auth.log` (Debian/Ubuntu; use `/var/log/secure` on RHEL) →
-  `/ingest/blue`. Lines matching common failed-auth keywords are tagged
-  `event_type=blue.alert` so they're recognized as detections.
-
-Run each on its respective VM:
-
-```bash
-COLLECTOR_URL=http://<collector-ip>:8001 INGEST_TOKEN=<token> \
-  ./scripts/forward-red-bash-history.sh ~/red-command.log
-
-COLLECTOR_URL=http://<collector-ip>:8001 INGEST_TOKEN=<token> \
-  ./scripts/forward-blue-authlog.sh /var/log/auth.log
-```
-
-**Correlation caveat:** neither source has a shared `correlation_id`, so
-matching falls back to the IP/destination heuristic in
-[`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md#correlation-logic).
-That only works if the red-team command's target IP (extracted from the
-command text) and the blue VM's own IP (used as `destination`) are the same
-*string* — e.g. the red operator ran `ssh 10.0.0.20` and the blue VM's
-`hostname -I` also resolves to `10.0.0.20`. If red types a hostname instead
-of an IP, or the blue VM has multiple interfaces, matching will silently
-miss and everything shows up as `visibility_gap` even though detection
-happened. Check `/analysis` after a test action — if hits aren't showing up
-despite both events being on `/timeline`, this is the first thing to check.
-
-## Blue score receiver
-
-Metis's blue-team scoring (`blue/scoring-engine/checker.py`, 7 vulnerability
-checks per seat, 5 formal + 2 hidden bonus, 20 pts each) has no API either —
-it writes a `leaderboard_<target>.json` snapshot to a host directory every
-time it re-checks. [`src/rbcollector/blue_score_receiver.py`](src/rbcollector/blue_score_receiver.py)
-polls that directory directly (same "read Metis's own files" pattern as the
-seat log receiver, issue #16), and applies the *same* leak filter
-`checker.py` itself uses before pushing scores into the guest's container:
-the 2 hidden bonus checks never surface via `GET /blue-scores` until all 5
-formal checks pass, so this API is safe to expose publicly.
-
-```bash
-docker compose up -d --build blue-score-receiver
-```
-
-`BLUE_SCORE_DIR` needs to point at wherever `checker.py`/`auto_watch.sh` is
-actually run from on the host — that isn't wired into Metis's own deploy
-scripts yet (see issue #22), so the default in `docker-compose.yml` is a
-placeholder, not a confirmed convention.
+把整套服務啟動起來，POST [`examples/red-event.json`](examples/red-event.json) 跟 [`examples/blue-event.json`](examples/blue-event.json)，並斷言整條管線真的在 `/analysis` 上產生一筆關聯成功的 `hit`——不只是 ingest 回 200 而已。
 
 ## Release
 
-Image version must match semantic versioning (semver). To publish a new version:
+Image 版本要符合語意化版本（semver）。要發布新版本：
 
-1. Update `version` in [`pyproject.toml`](pyproject.toml):
+1. 更新 [`pyproject.toml`](pyproject.toml) 的 `version`：
    ```toml
    [project]
-   version = "0.2.0"  # e.g., 0.1.0 → 0.2.0
+   version = "0.2.0"  # 例如 0.1.0 → 0.2.0
    ```
 
-2. Commit and create a git tag matching the version:
+2. Commit 並打一個對應版本的 git tag：
    ```bash
    git add pyproject.toml
    git commit -m "版本提升至 0.2.0"
-   git tag v0.2.0      # Tag MUST start with 'v'
+   git tag v0.2.0      # tag 一定要用 'v' 開頭
    git push origin main --tags
    ```
 
-3. CI will:
-   - Verify the tag version (`v0.2.0`) matches `pyproject.toml` (`0.2.0`)
-   - Build and push the image with tags:
-     - `ghcr.io/graylee0128/red-blue-log-collector:v0.2.0` (pinned release)
-     - `ghcr.io/graylee0128/red-blue-log-collector:latest` (development/convenience)
-   - Fail if versions don't match, with a clear error message
+3. CI 會：
+   - 驗證 tag 版本（`v0.2.0`）跟 `pyproject.toml`（`0.2.0`）一致
+   - Build 並推送 image，兩個 tag：
+     - `ghcr.io/graylee0128/red-blue-log-collector:v0.2.0`（固定版本）
+     - `ghcr.io/graylee0128/red-blue-log-collector:latest`（開發/方便用）
+   - 版本對不上就失敗，並印出清楚的錯誤訊息
 
-### Version mismatch
+### 版本不一致
 
-If CI fails with a version mismatch error, the tag was pushed but the image was
-not built. Fix and retry:
+如果 CI 因為版本不一致失敗，代表 tag 已經推上去但 image 沒 build。修好再重試：
 
 ```bash
-# If tag was pushed but version is wrong:
+# 如果 tag 推上去了但版本錯了：
 git tag -d v0.2.0
 git push origin :refs/tags/v0.2.0
-# Then fix pyproject.toml and try again
+# 修好 pyproject.toml 再重來一次
 ```
 
-### Consuming the image
+### 使用這個 image
 
-- **Development:** Use `:latest` (always tracks main branch)
-- **Production:** Use a pinned version tag (e.g. `:v0.2.0`). This repo's own
-  [`docker-compose.yml`](docker-compose.yml) still builds the collector
-  locally (`build: .`) rather than pulling a published tag — swap in an
-  `image:` line like the one below if you're deploying the published image
-  instead of building from source.
+- **開發環境**：用 `:latest`（永遠跟著 main 分支）
+- **正式環境**：用固定的版本 tag（例如 `:v0.2.0`）。這個 repo 自己的
+  [`docker-compose.yml`](docker-compose.yml) 目前還是本機 build（`build: .`），不是拉發布過的 image——如果要改成部署發布版 image，把下面這行 `image:` 換上去。
 
 ```yaml
 services:
@@ -292,24 +179,22 @@ services:
     image: ghcr.io/graylee0128/red-blue-log-collector:v0.2.0
 ```
 
-## Interface contract
+## 介面契約
 
-See [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md) for the full
-field-alias table, normalized event shape, and correlation logic — this is
-what to hand the Red/Blue teams instead of the source code.
+完整的欄位別名對照表、正規化後的事件格式、關聯比對邏輯，見 [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md)——這份要拿去給紅／藍隊看，不是給他們看原始碼。
 
-## When the real interfaces arrive
+## Adapter 是唯一該改的地方
 
-Do **not** rewrite the collector. Only update:
+Metis（或未來其他來源）的介面格式如果變了，**不要重寫整個收集器**，只改：
 
 ```text
 src/rbcollector/adapters/red.py
 src/rbcollector/adapters/blue.py
 ```
 
-The storage/API contract stays stable.
+儲存層／API 契約維持不變。
 
-A recommended minimum producer contract is:
+推薦的最小生產者契約：
 
 ```json
 {
@@ -323,6 +208,6 @@ A recommended minimum producer contract is:
 }
 ```
 
-## Why raw events are stored separately
+## 為什麼原始事件要另外存一份
 
-Adapters will change when the Red/Blue teams publish their real schemas. Keeping the producer payload in `raw_events` means a bad early mapping can be reprocessed later without losing the original evidence.
+Adapter 遇到紅／藍隊發布真實 schema 時會跟著改。把生產者原始 payload 留在 `raw_events` 裡，代表早期錯的對應關係之後可以重新處理，不會弄丟原始證據。
