@@ -33,7 +33,14 @@ from .store import EventStore
 
 logger = logging.getLogger("rbcollector.blue_score_receiver")
 
-DEFAULT_SCORE_DIR = "/var/lib/metis/blue-scores"
+
+# issue #44：checker.py 原本用相對路徑寫檔，實際輸出目錄取決於操作者的
+# 工作目錄，沒有固定慣例。已回報 Metis（se-218/Metis#137），對方在
+# PR #138 定案：checker.py 預設輸出目錄改成 /var/log/metis/leaderboard/，
+# 並透過 metis-checker@.service systemd unit 自動幫每個藍隊 a 座位起一支
+# --loop（2026-08-21 確認）。這裡的預設值對齊那個官方慣例，不是我們自己
+# 編的暫定值。
+DEFAULT_SCORE_DIR = "/var/log/metis/leaderboard"
 DEFAULT_SEAT_LOG_DIR = "/var/log/metis/seat"
 DEFAULT_POLL_INTERVAL = 5.0  # seconds -- checker.py itself re-checks every ~10s
 

@@ -50,31 +50,28 @@ services:
   # Issue #22：讀 blue/scoring-engine/checker.py 產生的 leaderboard_<target>.
   # json（藍隊修補進度），一樣是「直接讀 Metis 自己的檔案」模式，不是 API。
   #
-  # issue #33 查證過（跟另一個 session 交叉確認）：checker.py 寫檔用
-  # out_path = f"leaderboard_{target}.json"，純相對路徑，沒有 --out/--dir
-  # 參數，實際落在誰手動執行 auto_watch.sh 當下的工作目錄——auto_watch.sh
-  # 本身也沒被接進任何部署流程/systemd unit，這個目錄 100% 取決於操作者
-  # 當天怎麼打指令，不是讀程式碼能鎖死的答案。Metis 的
-  # blue/scoring-engine/README.md 範例指令都是裸的 `python3 checker.py ...`
-  # （不是帶完整路徑），代表文件預期操作者是先 cd 進
-  # blue/scoring-engine/ 才執行，這是唯一有文件根據的猜測，也是
-  # METIS_BLUE_SCORE_HOST_DIR 預設值的來源。/var/lib/metis/blue-scores
-  # 純粹是我們這邊之前自己編的暫定值，Metis repo 裡任何地方都沒出現過。
+  # issue #44：這個路徑原本沒有固定慣例，checker.py 用相對路徑寫檔，實際
+  # 落在誰手動執行當下的工作目錄，換一台機器/換一個操作習慣就對不上。已經
+  # 回報 Metis（se-218/Metis#137），對方在 PR #138 定案：checker.py 預設輸出
+  # 目錄改成 /var/log/metis/leaderboard/，且透過新增的 metis-checker@.service
+  # systemd unit 自動幫每個藍隊 a 座位起一支，不用再手動執行、也不用再猜
+  # 操作者的工作目錄——這是 Metis 官方確認的正式慣例（2026-08-21），不是
+  # 我們自己編的暫定值。b 座位（內部網段）刻意不計分，Metis 那邊已確認是
+  # 設計如此，不是漏接。
   #
-  # 每次部署前務必跟實際操作 checker.py 的人核對這個目錄，對不上的話這條
-  # 資料會整場收不到、且不會報錯（blue_score_receiver.py 對不存在的目錄
-  # 只記警告，不會讓服務掛掉）——沒有比對過就假設是對的最容易漏掉。
+  # 如果本機開發環境不是走 systemd（手動跑 checker.py --out 指到別的地方），
+  # 用 METIS_BLUE_SCORE_HOST_DIR 覆寫這個預設值即可。
   blue-score-receiver:
     build: .
     command: ["python", "-m", "rbcollector.blue_score_receiver"]
     environment:
       DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
-      BLUE_SCORE_DIR: "/var/lib/metis/blue-scores"
+      BLUE_SCORE_DIR: "/var/log/metis/leaderboard"
       SEAT_LOG_DIR: "/var/log/metis/seat"
       BLUE_SCORE_POLL_INTERVAL: "5"
       LOG_LEVEL: "INFO"
     volumes:
-      - ${METIS_BLUE_SCORE_HOST_DIR:-/var/lib/metis/blue-scores}:/var/lib/metis/blue-scores:ro
+      - ${METIS_BLUE_SCORE_HOST_DIR:-/var/log/metis/leaderboard}:/var/log/metis/leaderboard:ro
       # issue #22 後續：額外讀 seat log 目錄，掃出真的存在的藍隊席位
       # （不受 auto_watch.sh 只監控 blue-a-* 的限制），跟 seat-log-receiver
       # 用同一份唯讀掛載，見 blue_score_receiver.py 的 find_blue_seat_names()。
