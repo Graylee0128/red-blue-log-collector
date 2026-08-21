@@ -165,12 +165,11 @@ allows the port. What's missing before doing that for real (see
    the port can write fake events. Once set, every `POST /ingest/*` call must
    send `Authorization: Bearer <token>`; requests without it get `401`.
 2. **Open the port** for the source VM(s) specifically, not `0.0.0.0/0`.
-3. **Ship logs from the VM.** [`scripts/forwarder-template.sh`](scripts/forwarder-template.sh)
-   is a minimal starting point (tail a log file, POST each line with the
-   bearer token) per issue #1's Option A. It sends `{"message": line, ...}` —
-   replace that payload construction with real field mapping once the actual
-   Red/Blue log format is known, using the aliases in
-   [`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md).
+3. **Ship logs from the VM.** The real Red/Blue log format (Metis's seat
+   logs) is known now, so this collector reads it directly instead —
+   see [Real log source](#real-log-source) below. A generic tail-and-POST
+   forwarder script is no longer needed for that path; write one only if a
+   future source can't be read directly by a host-mounted receiver.
 
 **Not adopted (for now):** [issue #2](../../issues/2) proposed replacing this
 HTTP-push model with cyber's Alloy/Loki tail-and-ship pipeline. That's a more
@@ -182,42 +181,27 @@ this repo's correlation/MTTD logic doesn't have an obvious Loki equivalent.
 Revisit if/when raw-log volume or multi-consumer needs (e.g. Grafana wanting
 the same logs) make a shared Loki backend worth the added infra.
 
-## Real log source forwarders
+## Real log source
 
-Two concrete forwarders, built on the `forwarder-template.sh` pattern, for
-the actual log sources currently in use:
+The forwarder-script approach above was written before Metis's actual log
+format was known. It's superseded now: Metis writes red/blue terminal
+activity straight to host files (`/var/log/metis/seat/<seat>.cmd`), and
+[`seat_log_receiver.py`](src/rbcollector/seat_log_receiver.py) tails that
+directory directly (bind-mounted read-only into the `seat-log-receiver`
+container) — no forwarder script, no `/ingest/*` HTTP call, no bearer
+token involved for this path. Team is inferred from the filename
+(`red-*.cmd` vs `blue-{a,b}-*.cmd`).
 
-- [`scripts/forward-red-bash-history.sh`](scripts/forward-red-bash-history.sh)
-  — red-team command log → `/ingest/red`. Plain `~/.bash_history` isn't
-  reliable to tail live (it's only flushed periodically); the script's
-  header comment includes a `PROMPT_COMMAND` snippet to log each command
-  with a timestamp as it runs.
-- [`scripts/forward-blue-authlog.sh`](scripts/forward-blue-authlog.sh) —
-  `/var/log/auth.log` (Debian/Ubuntu; use `/var/log/secure` on RHEL) →
-  `/ingest/blue`. Lines matching common failed-auth keywords are tagged
-  `event_type=blue.alert` so they're recognized as detections.
+[`blue_score_receiver.py`](src/rbcollector/blue_score_receiver.py) does the
+same for blue-team scoring — see [Blue score receiver](#blue-score-receiver)
+below.
 
-Run each on its respective VM:
-
-```bash
-COLLECTOR_URL=http://<collector-ip>:8001 INGEST_TOKEN=<token> \
-  ./scripts/forward-red-bash-history.sh ~/red-command.log
-
-COLLECTOR_URL=http://<collector-ip>:8001 INGEST_TOKEN=<token> \
-  ./scripts/forward-blue-authlog.sh /var/log/auth.log
-```
-
-**Correlation caveat:** neither source has a shared `correlation_id`, so
-matching falls back to the IP/destination heuristic in
-[`docs/INTERFACE_CONTRACT.md`](docs/INTERFACE_CONTRACT.md#correlation-logic).
-That only works if the red-team command's target IP (extracted from the
-command text) and the blue VM's own IP (used as `destination`) are the same
-*string* — e.g. the red operator ran `ssh 10.0.0.20` and the blue VM's
-`hostname -I` also resolves to `10.0.0.20`. If red types a hostname instead
-of an IP, or the blue VM has multiple interfaces, matching will silently
-miss and everything shows up as `visibility_gap` even though detection
-happened. Check `/analysis` after a test action — if hits aren't showing up
-despite both events being on `/timeline`, this is the first thing to check.
+The `/ingest/red` / `/ingest/blue` HTTP endpoints documented above still
+exist and are still the right integration point for a log source Metis
+*doesn't* already write to a file this collector can read (or for a future
+non-Metis deployment) — just note they aren't on the current real data
+path, only [`scripts/smoke-test.ps1`](scripts/smoke-test.ps1) exercises them
+today.
 
 ## Blue score receiver
 
