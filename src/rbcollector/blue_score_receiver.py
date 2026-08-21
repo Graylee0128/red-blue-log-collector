@@ -187,7 +187,7 @@ class BlueScoreTailer:
         比對，兩者都成立才算數，單靠其中一種都不夠可靠。
 
         沿用既有事件管線（adapters/blue.py 的 normalize()），不用另開資料表
-        或端點——這批事件自然會出現在 /events、/timeline，也會被
+        或端點——這批事件自然會出現在 /events，也會被
         analysis.py 的 correlate() 掃到。report 已經是 filtered_report() 處理
         過的（隱藏題解鎖前不出現），這裡不用重複過濾，也不會因此洩漏隱藏
         題進度。

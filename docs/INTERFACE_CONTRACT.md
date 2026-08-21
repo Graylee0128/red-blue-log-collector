@@ -13,8 +13,12 @@ change when a real provider schema shows up.
 | POST | `/ingest/red` | Accept one Red team event (any JSON object) |
 | POST | `/ingest/blue` | Accept one Blue team event (any JSON object) |
 | GET | `/events?team=red\|blue&limit=` | Normalized events for one team only |
-| GET | `/timeline?limit=` | Merged, time-ordered Red+Blue normalized events |
-| GET | `/analysis?limit=&caller=public\|purple` | Correlated Red→Blue detections + latency/gap summary, clearance-filtered |
+| GET | `/analysis?limit=&caller=public\|purple` | Correlated Red→Blue detections + latency/gap summary, gap rows delayed for `public` (see [Correlation logic](#correlation-logic)) |
+| GET | `/blue-scores` | Blue-team patch/vulnerability check snapshots (leak-filtered, public) |
+| GET | `/blue-seats` | Blue-team seat names known to exist (from seat log directory, public) |
+| GET | `/red-seats` | Red-team seat names known to exist (from seat log directory, public) |
+| GET | `/possible-breaches` | Heuristic pivot-detection results (public, explicitly unconfirmed) |
+| POST | `/admin/clear` (requires ingest token) | Truncate all event/score tables to reset for a new exercise |
 | GET | `/events/{event_id}/context?caller=public\|purple&window_minutes=` | Raw payload context window around one event, clearance-filtered |
 
 ## Authentication
@@ -90,8 +94,8 @@ assumed UTC. A missing timestamp defaults to "now" in UTC.
 
 ## Normalized event shape
 
-Both `/ingest/red` and `/ingest/blue` return, and `/timeline` / `/events`
-list, events in this shape:
+Both `/ingest/red` and `/ingest/blue` return, and `/events` lists, events
+in this shape:
 
 ```json
 {
@@ -123,30 +127,54 @@ later without having lost anything.
 
 ## Correlation logic
 
-`GET /analysis` pairs each Red event with a Blue event and classifies it:
+`GET /analysis` (`src/rbcollector/analysis.py`, `correlate()`) produces one
+row per Red event, plus separate rows for autonomous Blue fixes that have
+no Red event to anchor to. Three independent paths, tried in this order for
+each Red event:
 
-1. **Exact match** — same `correlation_id` on both sides.
-2. **Heuristic match** (only if no `correlation_id` match) — same
-   `source_ip` and `destination` (when both sides provide them), earliest
-   Blue event observed within **0–30 seconds after** the Red event.
-3. **No match** → `visibility_gap` (Blue never saw it).
-
-A matched pair is a:
-
-- **`hit`** — the matched Blue event's `event_type` or `message` contains
-  `alert`, `detect`, `detection`, or `firing` (case-insensitive).
-- **`detection_gap`** — matched, but nothing in the Blue event reads as a
-  detection (e.g. it's a benign log line, not an alert).
+1. **Alert path** (`detection_method="alert"`) — same `correlation_id` on
+   both sides, or a heuristic match (same `source_ip`+`destination`,
+   earliest Blue event within **0–30s after** the Red event) whose
+   `event_type`/`message` contains `alert`, `detect`, `detection`, or
+   `firing`. This is the path for a real automated alerting/IDS system —
+   this deployment currently has none wired up, so in practice this path
+   never fires; every observed `hit` today comes from path 2 or 3 below.
+2. **Response path** (`detection_method="response"`) — only tried when
+   path 1 doesn't produce a `hit`. Looks **5 minutes forward** from the
+   Red event (a separate, wider window from path 1's 30s — deliberately
+   not just "path 1 with a bigger number", to avoid diluting real-time
+   detection accuracy) for **both** of: (a) a Blue cmdlog line containing
+   a response keyword (`chmod`, `chown`, `iptables`, `ufw`,
+   `firewall-cmd`, `nft `, `drop`, `deny`, `block`, `rm -f`,
+   `delete from`, `sudoers`), and (b) a `blue.remediation` event (emitted
+   by `blue_score_receiver.py` when a checker.py vulnerability check
+   flips fail→pass). Both signals are required — the keyword alone might
+   be a typo'd command that didn't actually fix anything; the
+   remediation event alone doesn't prove it's related to this Red action.
+3. **No match on either path** → `visibility_gap` if there was no Blue
+   event nearby at all, `detection_gap` if something matched on timing
+   but wasn't recognized as a detection/response.
+4. **Autonomous fixes** (`detection_method="autonomous"`, `red: null`) —
+   after all Red events are processed, any `blue.remediation` event not
+   already claimed by path 2 above gets its own row if a response-keyword
+   cmdlog line exists within the preceding 5 minutes. This is how a Blue
+   team fix that happened with **no Red action at all** still shows up.
 
 `/analysis` also reports `detection_rate`, `mttd_p50_ms`, and `mttd_p95_ms`
-(latency computed only over `hit` pairs).
+(latency computed only over `hit` rows that have a Red anchor).
 
-The `correlations` array itself is clearance-filtered: `detection_gap` and
-`visibility_gap` rows carry full raw Red/Blue event detail and are dropped
-entirely unless the caller passes `?caller=purple` with a valid bearer
-token (see [Authentication](#authentication)) — the default `public` view
-only ever sees `hit` rows. The aggregate numbers (`detection_rate`,
-`mttd_*`, gap counts) are not filtered; only the per-row detail is.
+The `correlations` array is visibility-filtered by `src/rbcollector/disclosure.py`,
+not by a fixed clearance tier: **`hit` rows are public immediately**
+(detection success isn't something to hide from the audience — see the
+module docstring for why this differs from cyber's model). `detection_gap`/
+`visibility_gap` rows are `purple`-only for the first `GAP_REVEAL_DELAY_SECONDS`
+(60s) after the Red event, then become public too — revealing "Blue hasn't
+caught this yet" immediately would tip Blue off on a public battleboard.
+`caller=purple` (with a valid bearer token) skips the delay entirely. The
+aggregate numbers (`detection_rate`, `mttd_*`, gap counts) are never
+filtered — only the per-row detail is, and only for that 60s window.
+Raw evidence (`/events/{event_id}/context`) is a separate, always
+`purple`-only concern — see [Evidence context](#evidence-context).
 
 ## Detection rules
 

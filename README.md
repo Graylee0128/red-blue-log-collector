@@ -58,6 +58,27 @@ docker compose up -d --build purple-console
 - **頂列統計**：應對（藍隊應對數／紅隊事件數）、快速應對、修補（應對＋主動修補加總）、反應時間。
 - **`admin.html`**（獨立管理頁，故意不從 `index.html` 連結過去）：`/admin/clear` 一鍵清空六張表，開新的一局演練前用，需要 `INGEST_TOKEN`。
 
+### 時間軸什麼時候會出現一列
+
+關聯邏輯（[`analysis.py`](src/rbcollector/analysis.py) 的 `correlate()`）只認兩種來源，缺一不可：
+
+- **任何紅隊事件**——只要紅隊終端機打過任何一行指令（不管內容、不管有沒有意義），就會產生一列，狀態預設是「未被偵測」（紅色虛線），除非後續配對到藍隊回應：
+  - **快速應對／延遲應對**（`hit`，`detection_method="response"`）：紅隊事件之後 **5 分鐘內**，同時出現兩種訊號才算數——(1) 藍隊 cmdlog 含關鍵字（`chmod`／`chown`／`iptables`／`ufw`／`firewall-cmd`／`nft `／`drop`／`deny`／`block`／`rm -f`／`delete from`／`sudoers`），(2) checker.py 真的驗到某項檢查從 fail 翻 pass（`blue.remediation` 事件）。缺一不可——單靠關鍵字可能是打錯指令根本沒修好，單靠 checker.py 通過不知道是不是跟這次紅隊行動有關。1 分鐘內算快速，超過算延遲。
+  - **快速偵測／延遲偵測**（`detection_method="alert"`，即時告警路徑）：目前這個場景**完全用不到**，藍隊沒有自動告警機制，這條路徑是死的，保留給以後真的接上告警系統。
+- **藍隊主動修補**（`hit`，`detection_method="autonomous"`，`red` 是 `null`）：紅隊完全沒動作也會出現——只要藍隊自己抓到並修好一項漏洞（一樣要求 cmdlog 關鍵字 + `blue.remediation` 雙訊號都在 5 分鐘窗口內），不需要任何紅隊事件觸發。
+
+**不會觸發任何東西的情況**（Blue Shell 看得到打字內容，但時間軸不會有任何反應）：
+- 藍隊隨便打字、沒有真的修東西——沒有 checker.py 驗證通過，不算數。
+- 對一個**已經合規**的檔案下 `chmod`（例如檔案權限本來就對）——指令文字符合關鍵字，但 checker.py 不會有 fail→pass 的轉換，不會產生 `blue.remediation`。
+- 純紅隊活動、沒有任何藍隊訊號——會產生「未被偵測」列（紅色虛線），不是完全沒反應，但也不算「應對」。
+
+### 前端額外過濾（不影響資料庫，只影響畫面）
+
+Purple Console 的時間軸另外套了兩層跟資料品質有關的過濾（`ui/purple-console/index.html`），資料庫本身完整保留，不受影響：
+
+- `isNoiseMessage()`：純數字或同一字元重複 ≥3 次的紅隊訊息（如打字測試留下的 `123456`）不顯示。
+- `collapseBursts()`：同一來源在 5 秒內連續出現多筆事件，只保留最後一筆——偶爾會看到一次操作被切成好幾筆殘缺片段（如 `y`／`pyh`／`yp` 才接著出現完整的指令），這支是治標的緩解，不是治本（根因還沒定案，見已關閉的 [issue #39](../../issues/39) 討論），也可能誤合併真的連續快打的不同指令，是接受的取捨。
+
 ## 紅／藍隊真實資料來源
 
 Metis 把紅／藍隊終端機的操作直接寫到 host 端檔案（`/var/log/metis/seat/<seat>.cmd`），[`seat_log_receiver.py`](src/rbcollector/seat_log_receiver.py) 直接 tail 那個目錄（唯讀掛載進 `seat-log-receiver` container）——不用 forwarder 腳本、不用 `/ingest/*`、不用 bearer token。隊伍別（紅/藍）從檔名判斷（`red-*.cmd` vs `blue-{a,b}-*.cmd`）。
@@ -66,7 +87,6 @@ Metis 把紅／藍隊終端機的操作直接寫到 host 端檔案（`/var/log/m
 
 [`breach_detector.py`](src/rbcollector/breach_detector.py) 也是同一套「直接讀 Metis 自己的檔案」模式，tail `red-*.out`（終端機錄影），靠 OSC 跳脫序列（`ESC ] 0 ; user@host: cwd BEL`）判斷紅隊有沒有換過終端機視窗標題，heuristically 推論有沒有 pivot 到別台主機——純推論，不是確認過的攻擊成功事件。
 
-上面提到的 `POST /ingest/red`／`/ingest/blue` HTTP 端點還在（[Red/Blue 手動送資料](#red-手動送資料)），是給 Metis 沒有直接寫成收集器讀得到的檔案格式的資料源用的整合點（或未來非 Metis 部署用）——目前不在真實資料路徑上，只有 [`scripts/smoke-test.ps1`](scripts/smoke-test.ps1) 會用到。
 
 ## 藍隊計分接收器
 
@@ -93,51 +113,6 @@ services:
 
 `checker.py` 本身也要記得幫**每個**藍隊席位各自起一支 `--loop`（見上方[啟動](#啟動)），漏開哪個席位不會報錯，那個席位就悄悄一直是 0 分。
 
-## Red 手動送資料
-
-```bash
-curl -X POST http://localhost:8001/ingest/red \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $INGEST_TOKEN" \
-  -d '{
-    "timestamp":"2026-08-17T11:00:00+08:00",
-    "src_ip":"10.0.0.10",
-    "target_ip":"10.0.0.20",
-    "command":"nmap -sV 10.0.0.20",
-    "result":"ok"
-  }'
-```
-
-## Blue 手動送資料
-
-```bash
-curl -X POST http://localhost:8001/ingest/blue \
-  -H 'Content-Type: application/json' \
-  -H "Authorization: Bearer $INGEST_TOKEN" \
-  -d '{
-    "time":"2026-08-17T11:00:05+08:00",
-    "attacker_ip":"10.0.0.10",
-    "host":"web-01",
-    "alert":"Port scan detected",
-    "severity":"high"
-  }'
-```
-
-`Authorization` header 只有在 collector 的 `INGEST_TOKEN` 環境變數有設的時候才會驗證（見[開放給其他 VM 存取](#開放給其他-vm-存取)）。預設沒設，本機/開發環境不帶 token 一樣能用。
-
-## 查詢整合時間軸
-
-```bash
-curl 'http://localhost:8001/timeline?limit=500'
-```
-
-或只看單邊：
-
-```bash
-curl 'http://localhost:8001/events?team=red'
-curl 'http://localhost:8001/events?team=blue'
-```
-
 ## 開放給其他 VM 存取
 
 `docker-compose.yml` 的 `"8001:8000"` port mapping 已經綁到 collector host 上的所有網卡，不只 `localhost`——只要 host 防火牆/安全群組放行這個 port，同網段的來源 VM 就連得到。真的要對外開放前，還缺（見 [issue #1](../../issues/1)）：
@@ -154,7 +129,7 @@ curl 'http://localhost:8001/events?team=blue'
 pwsh scripts/smoke-test.ps1
 ```
 
-把整套服務啟動起來，POST [`examples/red-event.json`](examples/red-event.json) 跟 [`examples/blue-event.json`](examples/blue-event.json)，並斷言整條管線真的在 `/timeline`／`/analysis` 上產生一筆關聯成功的 `hit`——不只是 ingest 回 200 而已。
+把整套服務啟動起來，POST [`examples/red-event.json`](examples/red-event.json) 跟 [`examples/blue-event.json`](examples/blue-event.json)，並斷言整條管線真的在 `/analysis` 上產生一筆關聯成功的 `hit`——不只是 ingest 回 200 而已。
 
 ## Release
 
