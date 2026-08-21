@@ -149,8 +149,9 @@ collector's Postgres/`/analysis` half should keep existing at all — see the
 issue for the full tradeoff. Decision: keep this collector's ingestion path
 as-is (bearer-token HTTP push, per Option A) since it's the smaller change and
 this repo's correlation/MTTD logic doesn't have an obvious Loki equivalent.
-Revisit if/when raw-log volume or multi-consumer needs (e.g. Grafana wanting
-the same logs) make a shared Loki backend worth the added infra.
+Revisit if/when raw-log volume or multi-consumer needs (e.g. a dashboard
+tool wanting the same logs) make a shared Loki backend worth the added
+infra.
 
 ## Real log source
 
