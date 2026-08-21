@@ -1185,6 +1185,19 @@
     return line;
   }
 
+  // Shell 面板的原始訊息裡，script 這支錄影工具自己會印出連線開始/結束
+  // 的橫幅（"Script started on ...[COMMAND=...]"／"Script done on
+  // ...[COMMAND_EXIT_CODE=...]"），不是使用者打的指令，塞在清單裡很吵。
+  // 時間已經有獨立的 timeText 欄位顯示，這裡只把訊息本身換成精簡通知，
+  // 不重複印一次時間戳。抓不到符合的格式就照原樣顯示，不吃掉真的內容。
+  function formatShellMessage(raw) {
+    if (!raw) return raw;
+    if (/^Script started on /.test(raw)) return "已開始新連線";
+    var doneMatch = /^Script done on .*COMMAND_EXIT_CODE="(\d+)"/.exec(raw);
+    if (doneMatch) return "連線結束（exit " + doneMatch[1] + "）";
+    return raw;
+  }
+
   function caretEl(color) {
     var c = document.createElement("span");
     c.className = "caret";
@@ -1215,7 +1228,7 @@
       var host = document.getElementById("blue-shell");
       host.innerHTML = "";
       recent.forEach(function (e) {
-        host.appendChild(shellLine("#62b0ff", BLUE_PROMPT, fmtTime(e.observed_at), e.message || e.event_type || ""));
+        host.appendChild(shellLine("#62b0ff", BLUE_PROMPT, fmtTime(e.observed_at), formatShellMessage(e.message) || e.event_type || ""));
       });
       host.appendChild(shellLine("#62b0ff", BLUE_PROMPT, null, null, caretEl("#62b0ff")));
     } catch (err) {
@@ -1241,7 +1254,7 @@
       var host = document.getElementById("red-shell");
       host.innerHTML = "";
       recent.forEach(function (e) {
-        host.appendChild(shellLine("#ff6b78", RED_PROMPT, fmtTime(e.observed_at), e.message || e.event_type || ""));
+        host.appendChild(shellLine("#ff6b78", RED_PROMPT, fmtTime(e.observed_at), formatShellMessage(e.message) || e.event_type || ""));
       });
       host.appendChild(shellLine("#ff6b78", RED_PROMPT, null, null, caretEl("#ff6b78")));
     } catch (err) {
