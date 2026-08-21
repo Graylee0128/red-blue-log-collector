@@ -6,3 +6,6 @@ __pycache__/
 *.egg-info/
 .claude/
 docker-compose.override.yml
+# se-218/Metis 的獨立 checkout，方便同一個 VS Code 視窗跨 repo 改動，
+# 但它是另一個團隊的私有 repo，絕對不能被夾帶進這邊的 commit。
+Metis/
