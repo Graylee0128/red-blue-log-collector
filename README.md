@@ -34,14 +34,15 @@ http://localhost:8001/docs
 
 **單純 `docker compose up -d --build` 不夠**，還需要：
 
-1. **`docker-compose.override.yml`**（或設 `METIS_BLUE_SCORE_HOST_DIR` 環境變數）——指向 Metis `checker.py`/`auto_watch.sh` 真正執行時所在的目錄（見下方[藍隊計分接收器](#藍隊計分接收器)），不設的話藍隊修補進度永遠是空的，且不會報錯。
-2. **Metis 那邊要先起來**：`/var/log/metis/seat` 目錄要真的存在且可讀，這是 Metis 部署（`install.sh red/blue`）先跑完才會有的，順序上 Metis 要先起，我們的 collector 才有東西可讀。
-3. **`checker.py --loop <秒數>` 要對每個藍隊席位各自手動起一支**（目前沒有接進任何自動化流程，見 [se-218/Metis#137](https://github.com/se-218/Metis/issues/137)）：
+1. **Metis 那邊要先起來**：`/var/log/metis/seat`、`/var/log/metis/leaderboard` 兩個目錄要真的存在且可讀，這是 Metis 部署（`install.sh red/blue`）先跑完才會有的，順序上 Metis 要先起，我們的 collector 才有東西可讀。
+2. **藍隊計分（`checker.py`）已經由 Metis 自動起了**：`install.sh` 透過 `metis-checker@.service` 這個 systemd unit 幫每個藍隊 a 座位各自跑一支 `checker.py --loop`，輸出固定寫進 `/var/log/metis/leaderboard/`（`docker-compose.yml` 的預設值已對齊，見下方[藍隊計分接收器](#藍隊計分接收器)），一般情況不用手動起、也不用另外設定。只有本機開發環境不是走 systemd 部署時才需要手動跑：
 
    ```bash
    cd <Metis>/blue/scoring-engine
-   sudo python3 checker.py <target> --loop 15   # 要 sudo，checker.py 靠 docker exec 判定，沒有 docker 群組權限會全部誤判成 fail
+   sudo python3 checker.py <target> --loop 15 --out /var/log/metis/leaderboard   # 要 sudo，checker.py 靠 docker exec 判定，沒有 docker 群組權限會全部誤判成 fail
    ```
+
+   這種情況如果輸出目錄跟預設不同，用 `METIS_BLUE_SCORE_HOST_DIR` 環境變數覆寫（見下方[藍隊計分接收器](#藍隊計分接收器)）。
 
 ## Purple Console（投影戰況板）
 
@@ -96,9 +97,9 @@ Metis 的藍隊計分（`blue/scoring-engine/checker.py`，每席 7 項漏洞修
 docker compose up -d --build blue-score-receiver
 ```
 
-**`BLUE_SCORE_DIR` 一定要對到 `checker.py`/`auto_watch.sh` 實際執行時所在的目錄**——`checker.py` 寫檔用純相對路徑（`leaderboard_<target>.json`，沒有 `--out`/`--dir` 參數），實際落在誰手動執行當下的工作目錄，Metis 自己的部署流程也沒有固定這個慣例（見 [se-218/Metis#137](https://github.com/se-218/Metis/issues/137)）。`docker-compose.yml` 內建的預設值只是我們自己編的暫定值，對不上的話這條資料會整場收不到，**且不會報錯**（對不存在的目錄只記警告）。
+**`BLUE_SCORE_DIR` 預設對到 `/var/log/metis/leaderboard/`**——這個路徑原本沒有固定慣例（`checker.py` 早期版本用純相對路徑寫檔，實際落在誰手動執行當下的工作目錄），已回報 Metis（[se-218/Metis#137](https://github.com/se-218/Metis/issues/137)），對方在 [PR #138](https://github.com/se-218/Metis/pull/138) 定案：`checker.py` 預設輸出目錄改成 `/var/log/metis/leaderboard/`，且透過新增的 `metis-checker@.service` systemd unit 自動幫每個藍隊 a 座位起一支——這是 Metis 官方確認的正式慣例（2026-08-21），`docker-compose.yml` 的預設值已對齊，一般部署不用另外設定。
 
-建議做法：建一份沒進版控的 `docker-compose.override.yml`：
+只有本機開發環境不是走 systemd 部署（`checker.py` 手動帶 `--out` 指到別的目錄）時才需要覆寫，設環境變數 `METIS_BLUE_SCORE_HOST_DIR` 即可（`docker-compose.yml` 已經支援 `${METIS_BLUE_SCORE_HOST_DIR:-/var/log/metis/leaderboard}`），或建一份沒進版控的 `docker-compose.override.yml`：
 
 ```yaml
 services:
@@ -109,9 +110,9 @@ services:
       - /home/<user>/Metis/blue/scoring-engine:/home/<user>/Metis/blue/scoring-engine:ro
 ```
 
-或直接設環境變數 `METIS_BLUE_SCORE_HOST_DIR`（`docker-compose.yml` 已經支援 `${METIS_BLUE_SCORE_HOST_DIR:-/var/lib/metis/blue-scores}`）。
+對不上的話這條資料會整場收不到，**且不會報錯**（`blue_score_receiver.py` 對不存在的目錄只記警告，不會讓服務掛掉）——沒比對過就假設是對的最容易漏掉。
 
-`checker.py` 本身也要記得幫**每個**藍隊席位各自起一支 `--loop`（見上方[啟動](#啟動)），漏開哪個席位不會報錯，那個席位就悄悄一直是 0 分。
+b 座位（內部網段）刻意不計分——Metis 那邊已在 PR #138 確認是設計如此（排行榜/進度指示器整套只針對 `blue-a-*` 外網靶機，`b` 只用於橫向移動場景），不是漏接。
 
 ## 開放給其他 VM 存取
 
