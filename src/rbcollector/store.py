@@ -102,9 +102,21 @@ class EventStore:
             conn.execute("SELECT 1")
 
     def ensure_schema(self) -> None:
+        """`CREATE TABLE IF NOT EXISTS` 在併發下不是完全安全的——多個服務
+        （collector／各 receiver）幾乎同時啟動、同時呼叫這個方法時，兩個
+        connection 都可能通過「這張表還不存在」的檢查後才各自去建，系統
+        目錄本身的唯一鍵約束會讓其中一個撞成 UniqueViolation（實測在
+        issue #41 新增第五個 receiver 後真的撞到過）。這不是真的建表
+        失敗——對方那個 session 已經建好同一張表了，rollback 後重跑一次
+        整份 SCHEMA_SQL，這次 IF NOT EXISTS 會看到表已存在直接跳過。"""
         with self._connect() as conn:
-            conn.execute(SCHEMA_SQL)
-            conn.commit()
+            try:
+                conn.execute(SCHEMA_SQL)
+                conn.commit()
+            except psycopg.errors.UniqueViolation:
+                conn.rollback()
+                conn.execute(SCHEMA_SQL)
+                conn.commit()
 
     def append(self, team: str, raw_payload: dict[str, Any], event: dict[str, Any]) -> bool:
         with self._connect() as conn:
