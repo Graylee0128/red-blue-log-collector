@@ -100,16 +100,20 @@ def test_is_noise_pure_digits():
 
 
 def test_is_noise_repeated_character():
-    assert is_noise("aaaa") is True
-    assert is_noise("1111") is True
-    assert is_noise("----") is True
+    # issue #40: Metis cmdlog 修復後，不再需要過濾重複字元
+    # 修復前的補丁層已簡化，只保留純數字過濾
+    assert is_noise("aaaa") is False
+    assert is_noise("1111") is True   # 純數字被過濾
+    assert is_noise("----") is False  # 非數字不被過濾
     # 兩個字元不算雜訊（可能是有效的縮寫）
     assert is_noise("aa") is False
 
 
 def test_is_noise_repeated_with_spaces():
-    assert is_noise("a a a") is True
-    assert is_noise("1 1 1") is True
+    # issue #40: Metis cmdlog 修復後，前端 collapseBursts() 和完整 cmdlog
+    # 已足以處理這類片段，後端無需過濾
+    assert is_noise("a a a") is False
+    assert is_noise("1 1 1") is False
 
 
 def test_is_noise_real_commands_pass():
