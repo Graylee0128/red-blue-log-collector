@@ -21,6 +21,17 @@ def _session(container="red-01"):
     return f'Script started on 2026-08-19 01:44:57+00:00 [COMMAND="docker exec -it {container} bash" TERM="xterm-256color" TTY="/dev/pts/3"]\n'
 
 
+def _session_with_exit_hook(container="red-01"):
+    # se-218/Metis#143（exit code hook）生效時的實際指令格式——issue #41
+    # 驗證期間在真實環境撞到：這種格式曾經對不上 _SESSION_RE，導致重連
+    # 沒被判定成新 session，見 breach_detector.py 的 _SESSION_RE 註解。
+    return (
+        f'Script started on 2026-08-19 01:44:57+00:00 '
+        f'[COMMAND="docker exec -it {container} bash --rcfile /tmp/.metis-exit-rc.sh -i" '
+        f'TERM="xterm-256color" TTY="/dev/pts/3"]\n'
+    )
+
+
 def _title(host, user="root"):
     return f"\x1b]0;{user}@{host}: /\x07"
 
@@ -37,6 +48,17 @@ def test_find_pivot_targets_container_recreate_across_sessions_is_not_a_pivot():
     content = (
         _session() + _title("hostA") + _title("hostA")
         + _session() + _title("hostB") + _title("hostB")
+    )
+    assert find_pivot_targets(content) == []
+
+
+def test_find_pivot_targets_container_recreate_with_exit_hook_is_not_a_pivot():
+    # issue #41 實測撞到的 regression：有 exit code hook 的重連指令是
+    # `bash --rcfile ... -i`，不是單純 `bash"`——這種格式也要被正確判定
+    # 成新 session，不能因為指令多了參數就漏接，誤判成 pivot。
+    content = (
+        _session() + _title("hostA") + _title("hostA")
+        + _session_with_exit_hook() + _title("hostB") + _title("hostB")
     )
     assert find_pivot_targets(content) == []
 
