@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from datetime import datetime
 from statistics import median
 from typing import Any
@@ -167,11 +168,21 @@ _RESPONSE_WINDOW_SECONDS = 300
 # DB 憑證、cron、iptables、docker socket）整理出的關鍵字，不是憑空編的。
 # 只是「看起來像在處理」的啟發式線索，不保證真的成功——真正的驗證交給
 # _is_remediation_event()，兩者都成立才算事後應對命中。
-_RESPONSE_TOKENS = (
+#
+# issue #40: 支援環境變數 RESPONSE_ACTION_TOKENS 覆寫關鍵字列表，以便在
+# Metis fix/cmdlog-backspace 分支測試時調整比對策略。格式：逗號分隔的字串。
+# 預設值保持不變，確保向後相容。
+_DEFAULT_RESPONSE_TOKENS = (
     "chmod", "chown", "iptables", "ufw", "firewall-cmd", "nft ",
     "drop", "deny", "block",
     "rm -f", "delete from", "sudoers",
 )
+
+_RESPONSE_TOKENS = tuple(
+    token.strip() for token in
+    os.environ.get("RESPONSE_ACTION_TOKENS", "").split(",")
+    if token.strip()
+) or _DEFAULT_RESPONSE_TOKENS
 
 
 def _is_response_action(event: dict[str, Any]) -> bool:

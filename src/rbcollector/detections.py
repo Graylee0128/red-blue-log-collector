@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import os
+
 """資料驅動偵測規則 —— 取代 cyber 的 Grafana 告警規則
 （`deploy/grafana/provisioning/alerting/rules.yaml`）的獨立版本。
 
@@ -23,6 +25,9 @@ Metis 紅隊在終端機打的原始指令對不上（issue #30 已記錄）。�
 是編出來的合理猜測，讓時間軸不要一直卡在 unclassified，**不是**照真實
 cmdlog 內容調校過的結果。等真的從 Metis seat log 或紅隊拿到實際指令範例
 後，要回來對照修正這些關鍵字——別把這版當成已驗證的最終版本。
+
+issue #40: 支援環境變數 DISABLED_DETECTION_RULES 禁用某些規則進行測試。
+格式：逗號分隔的規則 ID（如 "sqli-injection-burst,ssh-brute-force"）。
 """
 
 from collections import defaultdict
@@ -115,8 +120,19 @@ DETECTION_RULES: tuple[DetectionRule, ...] = (
 
 
 def classify_technique(event: dict[str, Any]) -> dict[str, Any] | None:
-    """單筆事件比對所有規則，回傳第一個命中的規則資訊，沒中回傳 None。"""
+    """單筆事件比對所有規則，回傳第一個命中的規則資訊，沒中回傳 None。
+
+    issue #40: 支援 DISABLED_DETECTION_RULES 環境變數禁用某些規則進行測試。
+    """
+    disabled_rules = {
+        rule_id.strip() for rule_id in
+        os.environ.get("DISABLED_DETECTION_RULES", "").split(",")
+        if rule_id.strip()
+    }
+
     for rule in DETECTION_RULES:
+        if rule.id in disabled_rules:
+            continue
         if rule.match(event):
             return {"rule_id": rule.id, "technique": rule.technique, "severity": rule.severity}
     return None
@@ -136,11 +152,22 @@ def _parse(value: Any) -> datetime | None:
 def evaluate_detections(events: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """紅隊事件 -> {event_id: {rule_id, technique, severity}}，只收窗內累計
     次數超過門檻的事件（對應 Grafana「> N / 1分鐘」語意，逐規則／逐
-    group_by 分桶評估）。"""
+    group_by 分桶評估）。
+
+    issue #40: 支援 DISABLED_DETECTION_RULES 環境變數禁用某些規則進行測試。
+    """
     reds = [e for e in events if e.get("team") == "red" and e.get("event_id")]
+
+    disabled_rules = {
+        rule_id.strip() for rule_id in
+        os.environ.get("DISABLED_DETECTION_RULES", "").split(",")
+        if rule_id.strip()
+    }
 
     hits: dict[str, dict[str, Any]] = {}
     for rule in DETECTION_RULES:
+        if rule.id in disabled_rules:
+            continue
         matched = [(e, _parse(e.get("observed_at"))) for e in reds if rule.match(e)]
         matched = [(e, t) for e, t in matched if t is not None]
         if not matched:

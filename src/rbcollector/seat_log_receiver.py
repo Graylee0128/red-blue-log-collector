@@ -29,6 +29,15 @@ logger = logging.getLogger("rbcollector.seat_log_receiver")
 DEFAULT_SEAT_LOG_DIR = "/var/log/metis/seat"
 DEFAULT_POLL_INTERVAL = 1.0  # seconds
 
+# issue #40: 為 Metis fix/cmdlog-backspace 分支測試做準備，支持環境變量
+# 控制雜訊過濾的嚴格程度。修復後可能降低過濾等級或完全禁用。
+NOISE_FILTER_LEVEL = os.environ.get("SEAT_LOG_NOISE_FILTER_LEVEL", "normal").lower()
+# 允許的值：
+#   "strict"  — 原本的過濾（當前預設）
+#   "normal"  — 預設過濾
+#   "lenient" — 只過濾明顯的打字測試（純數字）
+#   "disabled"— 完全禁用，保留所有行（測試用）
+
 
 def get_team_from_filename(filename: str) -> str | None:
     """Extract team from Metis seat log filename.
@@ -120,15 +129,26 @@ def blue_payload_from_seat_log(parsed: dict[str, Any], filename: str) -> dict[st
 def is_noise(command: str) -> bool:
     """判斷一行指令是否明顯是雜訊（純數字、重複字元等打字測試）。
 
+    issue #40: 支援環境變數 SEAT_LOG_NOISE_FILTER_LEVEL 控制過濾嚴格度
+    - "strict" / "normal"：原本的過濾規則（3層檢查）
+    - "lenient"：只過濾純數字（用於 Metis fix/cmdlog-backspace 分支測試）
+    - "disabled"：完全不過濾，保留所有行
+
     Returns:
         True if the line is obvious noise, False if it looks like a real command
     """
     if not command:
         return True
 
-    # 純數字
+    if NOISE_FILTER_LEVEL == "disabled":
+        return False
+
+    # 純數字 — 所有等級都會過濾
     if command.isdigit():
         return True
+
+    if NOISE_FILTER_LEVEL == "lenient":
+        return False
 
     # 單一字元重複（如 "aaaa"、"1111"）— 留意 len >= 3 才當雜訊
     # 兩個字元可能是縮寫（"ls"、"cd"），不過濾
