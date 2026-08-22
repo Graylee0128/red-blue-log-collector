@@ -84,6 +84,16 @@ _EXIT_MARKER_RE = re.compile(rb"\[\[METIS_EXIT:(-?\d+)\]\]")
 # 太久沒出現就當作抓不到,不是判定藍隊有沒有回應。
 _LAST_COMMAND_WINDOW_SECONDS = 30
 
+# issue #41 在真實 VM 上驗證時撞到的真的 bug：cmdlog.sh 記錄指令時間、跟
+# .out/.timing 重建出來的標記時間,是兩個獨立的時鐘來源——"Script started
+# on ..." 這行本身只精確到整秒(沒有次秒位數),重建時間一律當成該整秒的
+# 0 毫秒起算,但 script 真正開始的時間點其實落在那一整秒內的任何時刻,
+# 加上 cmdlog.sh 自己寫入 .cmd 那行也有自己的緩衝延遲——兩邊加總起來,
+# 實測抓到同一句指令的標記時間比 cmd_time 早了 0.8~3.6 秒都有。嚴格要求
+# marker_time >= cmd_time 會把這種(完全正常的)情況整筆排除,永遠配不到。
+# 往前留一點寬限,讓「稍微早於指令時間」的標記還是能配對回這句指令。
+_CLOCK_SKEW_GRACE_SECONDS = 4.0
+
 
 def _parse_session_timestamp(raw: bytes) -> datetime | None:
     text = raw.decode("utf-8", errors="replace").strip()
@@ -215,19 +225,30 @@ def correlate_exit_codes(
     """`commands` 是 (event_id, observed_at) 依時間排序的清單,`markers` 是
     find_exit_markers() 回傳的 (時間, exit code) 依時間排序的清單。
 
-    每句指令取「這句指令之後、下一句指令之前(最後一句用 +30 秒代替)」
-    這個時間窗裡**第一個**出現的標記——不是硬性一對一,窗口裡如果有額外
-    的標記(例如空白 Enter 產生的),第一個之後的都被忽略,不會往後拖累
-    下一句指令的配對(見模組開頭文件說明為什麼不能用順序配對)。"""
+    每句指令取「這句指令之前留一點時鐘偏差寬限、之後、下一句指令之前
+    (最後一句用 +30 秒代替)」這個時間窗裡**第一個**出現的標記——不是
+    硬性一對一,窗口裡如果有額外的標記(例如空白 Enter 產生的),第一個
+    之後的都被忽略,不會往後拖累下一句指令的配對(見模組開頭文件說明
+    為什麼不能用順序配對)。
+
+    往前留的寬限(_CLOCK_SKEW_GRACE_SECONDS)會讓相鄰兩句指令的窗口出現
+    一小段重疊——用 `consumed` 記錄已經配走的標記索引,確保同一個標記
+    不會同時配給前後兩句指令(不然會出現同一個離開碼被重複寫進兩筆事件
+    的情況)。"""
     result: dict[str, str] = {}
+    consumed: set[int] = set()
     for i, (event_id, cmd_time) in enumerate(commands):
+        window_start = cmd_time - timedelta(seconds=_CLOCK_SKEW_GRACE_SECONDS)
         window_end = (
             commands[i + 1][1] if i + 1 < len(commands)
             else cmd_time + timedelta(seconds=_LAST_COMMAND_WINDOW_SECONDS)
         )
-        for marker_time, exit_code in markers:
-            if cmd_time <= marker_time < window_end:
+        for idx, (marker_time, exit_code) in enumerate(markers):
+            if idx in consumed:
+                continue
+            if window_start <= marker_time < window_end:
                 result[event_id] = str(exit_code)
+                consumed.add(idx)
                 break
     return result
 

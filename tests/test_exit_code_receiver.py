@@ -136,6 +136,37 @@ def test_correlate_exit_codes_no_marker_in_window_leaves_command_unresolved():
     assert correlate_exit_codes(commands, markers) == {}
 
 
+def test_correlate_exit_codes_matches_marker_slightly_before_cmd_time():
+    # issue #41 在真實 VM 上驗證時撞到的真的 bug：cmdlog.sh 的指令時間戳
+    # 跟 .out/.timing 重建出來的標記時間是兩個獨立時鐘來源，實測發現同一句
+    # 指令的標記時間可能比 cmd_time 早零點幾秒（"Script started on ..."
+    # 只精確到整秒）。嚴格要求 marker_time >= cmd_time 會讓這種完全正常的
+    # 情況永遠配不到，尤其是「最後一句指令」——沒有下一句指令的窗口起點
+    # 可以救回它。
+    t0 = datetime(2026, 8, 22, 10, 0, 0, tzinfo=timezone.utc)
+    commands = [("evt-1", t0)]
+    markers = [(t0 - timedelta(seconds=0.8), 0)]
+    assert correlate_exit_codes(commands, markers) == {"evt-1": "0"}
+    # 超過寬限秒數(_CLOCK_SKEW_GRACE_SECONDS=4)還是配不到。
+    markers_too_early = [(t0 - timedelta(seconds=5), 0)]
+    assert correlate_exit_codes(commands, markers_too_early) == {}
+
+
+def test_correlate_exit_codes_grace_overlap_does_not_double_assign_marker():
+    # 往前留的時鐘偏差寬限會讓相鄰兩句指令的窗口出現一小段重疊——驗證
+    # 同一個標記不會同時配給前後兩句指令(每句指令都先抓自己真正的標記,
+    # 重疊區只有在前一句指令自己完全沒有標記時才輪得到,這裡先驗證正常
+    # 情況:兩句指令各自有自己的標記,不會互搶)。
+    t0 = datetime(2026, 8, 22, 10, 0, 0, tzinfo=timezone.utc)
+    commands = [("evt-1", t0), ("evt-2", t0 + timedelta(seconds=10))]
+    markers = [
+        (t0 + timedelta(seconds=1), 0),      # evt-1 自己的標記
+        (t0 + timedelta(seconds=9), 127),    # evt-2 標記,比 cmd_time 早 1 秒(時鐘偏差)
+    ]
+    result = correlate_exit_codes(commands, markers)
+    assert result == {"evt-1": "0", "evt-2": "127"}
+
+
 def test_exit_code_correlator_end_to_end_updates_pending_events(tmp_path):
     seat_dir = tmp_path
     session_start_str = "2026-08-22 10:00:00+0000"
