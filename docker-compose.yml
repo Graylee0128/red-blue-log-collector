@@ -99,6 +99,25 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  # Issue #41：把 se-218/Metis#143 印進 <seat>.out 的 [[METIS_EXIT:N]]
+  # 標記還原成時間戳，關聯回 .cmd 那句指令，補上 action_result（一直是
+  # "unknown"，因為 cmdlog.sh 本身沒有這個資訊，見 exit_code_receiver.py
+  # 開頭 docstring 的完整設計說明跟已知限制）。
+  exit-code-receiver:
+    build: .
+    command: ["python", "-m", "rbcollector.exit_code_receiver"]
+    environment:
+      DATABASE_URL: postgresql://collector:collector@postgres:5432/collector
+      SEAT_LOG_DIR: "/var/log/metis/seat"
+      EXIT_CODE_POLL_INTERVAL: "5"
+      LOG_LEVEL: "INFO"
+    volumes:
+      - /var/log/metis/seat:/var/log/metis/seat:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
   purple-console:
     image: nginx:1.27-alpine
     volumes:

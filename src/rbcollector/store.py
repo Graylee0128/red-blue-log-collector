@@ -287,6 +287,28 @@ class EventStore:
             rows = conn.execute("SELECT seat FROM red_seats ORDER BY seat").fetchall()
         return [seat for (seat,) in rows]
 
+    def update_action_result(self, event_id: str, action_result: str) -> bool:
+        """issue #41：把 cmdlog 事件關聯到的離開碼寫回既有事件——這筆事件
+        本身已經由 seat_log_receiver.py 寫入（action_result 預設
+        "unknown"），這裡只補這一欄。event JSONB 欄位也要同步更新，不然
+        /events／/timeline 回傳的完整 JSON 跟這個獨立欄位會兜不起來。
+        event_id 不存在時回傳 False，不拋例外——呼叫端（exit_code_receiver.py）
+        是背景輪詢，單筆事件消失或還沒寫入不該讓整輪處理中斷。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT event FROM normalized_events WHERE event_id=%s", (event_id,)
+            ).fetchone()
+            if row is None:
+                return False
+            event = dict(row[0])
+            event["action_result"] = action_result
+            conn.execute(
+                "UPDATE normalized_events SET action_result=%s, event=%s WHERE event_id=%s",
+                (action_result, Jsonb(event), event_id),
+            )
+            conn.commit()
+            return True
+
     def clear_all(self) -> None:
         """issue #38 選項 2：一鍵清空目前所有演練資料（六張表全部
         TRUNCATE），準備下一局用。不動 host 端的 leaderboard/seat log 檔案

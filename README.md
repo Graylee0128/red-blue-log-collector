@@ -88,6 +88,8 @@ Metis 把紅／藍隊終端機的操作直接寫到 host 端檔案（`/var/log/m
 
 [`breach_detector.py`](src/rbcollector/breach_detector.py) 也是同一套「直接讀 Metis 自己的檔案」模式，tail `red-*.out`（終端機錄影），靠 OSC 跳脫序列（`ESC ] 0 ; user@host: cwd BEL`）判斷紅隊有沒有換過終端機視窗標題，heuristically 推論有沒有 pivot 到別台主機——純推論，不是確認過的攻擊成功事件。
 
+[`exit_code_receiver.py`](src/rbcollector/exit_code_receiver.py)（issue #41）補上 `action_result` 這一欄——Metis（se-218/Metis#143）把每句指令的離開碼印進 `<seat>.out`（畫面輸出，不是 `.cmd`），這支重建 `.out`／`.timing` 的時間軸把離開碼配回對應的 cmdlog 事件，寫回 `normalized_events`。同樣是啟發式訊號（來賓是容器內 root，能自己偽造離開碼），不是竄改不了的資安邊界。
+
 
 ## 藍隊計分接收器
 
