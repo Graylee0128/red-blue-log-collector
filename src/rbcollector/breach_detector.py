@@ -59,7 +59,15 @@ DEFAULT_POLL_INTERVAL = 10.0  # seconds
 # 被 Metis 重建時，它自己的內部 hostname（見下面 _OSC_TITLE_RE）會換成
 # 新的隨機值，那不是 pivot，只是同一個席位換了個容器，所以每次看到這行
 # 都要重設「目前 session 的基準 host」。
-_SESSION_RE = re.compile(r'Script started on .*?\[COMMAND="docker exec -it (\S+) bash"')
+#
+# `bash` 後面不能寫死接引號結尾——se-218/Metis#143（exit code hook）之後，
+# 有 hook 生效的連線指令變成 `docker exec -it <seat> bash --rcfile
+# /tmp/.metis-exit-rc.sh -i`，原本只認 `bash"` 的版本對不上這種格式，
+# 會讓這一行沒被判定成新 session，繼續沿用舊基準主機名——容器重連換了
+# 新的隨機 hostname 就會被誤判成「pivot 到新主機」（實測在 issue #41
+# 驗證期間真的撞到這個 false positive）。`bash` 後面允許任意非引號字元
+# 到收尾引號為止，涵蓋「有沒有接 --rcfile」兩種情況。
+_SESSION_RE = re.compile(r'Script started on .*?\[COMMAND="docker exec -it (\S+) bash(?:\s[^"]*)?"')
 
 # xterm/Debian 系預設 bashrc 常見的「設終端機視窗標題」跳脫序列：
 # ESC ] 0 ; user@host: cwd BEL。每畫一次新 prompt 就會重發一次，內容包含

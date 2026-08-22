@@ -102,9 +102,21 @@ class EventStore:
             conn.execute("SELECT 1")
 
     def ensure_schema(self) -> None:
+        """`CREATE TABLE IF NOT EXISTS` 在併發下不是完全安全的——多個服務
+        （collector／各 receiver）幾乎同時啟動、同時呼叫這個方法時，兩個
+        connection 都可能通過「這張表還不存在」的檢查後才各自去建，系統
+        目錄本身的唯一鍵約束會讓其中一個撞成 UniqueViolation（實測在
+        issue #41 新增第五個 receiver 後真的撞到過）。這不是真的建表
+        失敗——對方那個 session 已經建好同一張表了，rollback 後重跑一次
+        整份 SCHEMA_SQL，這次 IF NOT EXISTS 會看到表已存在直接跳過。"""
         with self._connect() as conn:
-            conn.execute(SCHEMA_SQL)
-            conn.commit()
+            try:
+                conn.execute(SCHEMA_SQL)
+                conn.commit()
+            except psycopg.errors.UniqueViolation:
+                conn.rollback()
+                conn.execute(SCHEMA_SQL)
+                conn.commit()
 
     def append(self, team: str, raw_payload: dict[str, Any], event: dict[str, Any]) -> bool:
         with self._connect() as conn:
@@ -286,6 +298,28 @@ class EventStore:
         with self._connect() as conn:
             rows = conn.execute("SELECT seat FROM red_seats ORDER BY seat").fetchall()
         return [seat for (seat,) in rows]
+
+    def update_action_result(self, event_id: str, action_result: str) -> bool:
+        """issue #41：把 cmdlog 事件關聯到的離開碼寫回既有事件——這筆事件
+        本身已經由 seat_log_receiver.py 寫入（action_result 預設
+        "unknown"），這裡只補這一欄。event JSONB 欄位也要同步更新，不然
+        /events／/timeline 回傳的完整 JSON 跟這個獨立欄位會兜不起來。
+        event_id 不存在時回傳 False，不拋例外——呼叫端（exit_code_receiver.py）
+        是背景輪詢，單筆事件消失或還沒寫入不該讓整輪處理中斷。"""
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT event FROM normalized_events WHERE event_id=%s", (event_id,)
+            ).fetchone()
+            if row is None:
+                return False
+            event = dict(row[0])
+            event["action_result"] = action_result
+            conn.execute(
+                "UPDATE normalized_events SET action_result=%s, event=%s WHERE event_id=%s",
+                (action_result, Jsonb(event), event_id),
+            )
+            conn.commit()
+            return True
 
     def clear_all(self) -> None:
         """issue #38 選項 2：一鍵清空目前所有演練資料（六張表全部
