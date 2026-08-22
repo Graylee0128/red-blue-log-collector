@@ -24,8 +24,11 @@ Metis 紅隊在終端機打的原始指令對不上（issue #30 已記錄）。�
 cmdlog 內容調校過的結果。等真的從 Metis seat log 或紅隊拿到實際指令範例
 後，要回來對照修正這些關鍵字——別把這版當成已驗證的最終版本。
 
-issue #40: Metis fix/cmdlog-backspace 分支修復後驗證，11 條規則在完整
-cmdlog 下准確度已足夠，無需調整規則邏輯。
+issue #40：Metis fix/cmdlog-backspace（se-218/Metis#142）修復後，拿實際
+cmdlog.sh 新舊兩版跑同一批模擬鍵盤位元組流比對過（見
+tests/test_issue_40_metis_cmdlog_fix.py）——這裡的比對邏輯本身跟
+_RESPONSE_TOKENS 用同一套字串包含判斷，結論一致：規則清單不用因為這個
+修復而調整，佔位資料/待真實驗證的既有警語（見上方）仍然成立。
 """
 
 from collections import defaultdict

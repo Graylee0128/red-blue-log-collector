@@ -40,8 +40,6 @@ services:
       SEAT_LOG_DIR: "/var/log/metis/seat"
       SEAT_LOG_POLL_INTERVAL: "1"
       LOG_LEVEL: "INFO"
-      # issue #40: 測試時可覆寫下列值
-      # SEAT_LOG_NOISE_FILTER_LEVEL: "lenient"  # 只過濾純數字
     volumes:
       - /var/log/metis/seat:/var/log/metis/seat:ro
     depends_on:

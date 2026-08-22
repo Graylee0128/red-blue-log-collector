@@ -29,16 +29,6 @@ logger = logging.getLogger("rbcollector.seat_log_receiver")
 DEFAULT_SEAT_LOG_DIR = "/var/log/metis/seat"
 DEFAULT_POLL_INTERVAL = 1.0  # seconds
 
-# issue #40: 為 Metis fix/cmdlog-backspace 分支測試做準備，支持環境變量
-# 控制雜訊過濾的嚴格程度。修復後可能降低過濾等級或完全禁用。
-NOISE_FILTER_LEVEL = os.environ.get("SEAT_LOG_NOISE_FILTER_LEVEL", "normal").lower()
-# 允許的值：
-#   "strict"  — 原本的過濾（當前預設）
-#   "normal"  — 預設過濾
-#   "lenient" — 只過濾明顯的打字測試（純數字）
-#   "disabled"— 完全禁用，保留所有行（測試用）
-
-
 def get_team_from_filename(filename: str) -> str | None:
     """Extract team from Metis seat log filename.
 
@@ -127,12 +117,24 @@ def blue_payload_from_seat_log(parsed: dict[str, Any], filename: str) -> dict[st
 
 
 def is_noise(command: str) -> bool:
-    """判斷一行指令是否明顯是雜訊（純數字等打字測試）。
+    """判斷一行指令是否明顯是雜訊（純數字、重複字元等打字測試）。
 
-    issue #40: Metis fix/cmdlog-backspace 分支修復 cmdlog 位元組流問題後，
-    打字殘缺片段已大幅減少，因此簡化過濾邏輯：只保留純數字判定。
-    其他碎片邏輯（重複字元、空白重複）已由前端 collapseBursts() 和
-    完整的 cmdlog 雙層機制取代。
+    issue #40 重新驗證結論：這三項檢查**維持不動**，不因 Metis
+    fix/cmdlog-backspace（se-218/Metis#142）而簡化。原因是拿實際的
+    Metis cmdlog.sh 新舊兩版（修復前 commit 1ae6855^、修復後 origin/main
+    a32d288）餵同一批模擬鍵盤位元組流（含退格／方向鍵修正）跑過（見
+    tests/test_issue_40_metis_cmdlog_fix.py 的 REAL_PIPELINE_SAMPLES）：
+    - Metis 的修復解決的是「退格／方向鍵修正的殘留字元污染單行內容」
+      （如 "iptables ... DROPP"、"itpables ... DROPt"），這批污染在修
+      復後確實消失了，但它們從來就不是純數字/重複字元，is_noise() 原本
+      也沒在管這個——修不修都跟這三項檢查無關。
+    - 這裡要濾的「純數字」「單一字元重複」「重複字元夾空白」是選手打字
+      測試/等待時的敲擊噪音，跟 cmdlog.sh 有沒有正確重放退格是兩件事：
+      同一批鍵盤輸入餵給修復前後兩版 cmdlog.sh，"aaaaaa"／"123456" 這類
+      輸出完全一致，修復對它們沒有任何影響。
+    上一輪（PR #50/#51，已被 main 回退）把重複字元檢查拿掉，前提是「碎片
+    消失了所以不用濾」，但這批真實資料顯示重複字元雜訊本來就不是碎片，
+    拿掉沒有事實根據，這裡改回保留。
 
     Returns:
         True if the line is obvious noise, False if it looks like a real command
@@ -140,8 +142,17 @@ def is_noise(command: str) -> bool:
     if not command:
         return True
 
-    # 純數字 — 明顯的打字測試，保留過濾
+    # 純數字
     if command.isdigit():
+        return True
+
+    # 單一字元重複（如 "aaaa"、"1111"）— 留意 len >= 3 才當雜訊
+    # 兩個字元可能是縮寫（"ls"、"cd"），不過濾
+    if len(command) >= 3 and len(set(command)) == 1:
+        return True
+
+    # 單一字元重複的變種，留個空白（退格測試："a a a"）
+    if len(set(c for c in command if c != ' ')) == 1 and command.count(' ') >= 2:
         return True
 
     return False
