@@ -127,12 +127,12 @@ def blue_payload_from_seat_log(parsed: dict[str, Any], filename: str) -> dict[st
 
 
 def is_noise(command: str) -> bool:
-    """判斷一行指令是否明顯是雜訊（純數字、重複字元等打字測試）。
+    """判斷一行指令是否明顯是雜訊（純數字等打字測試）。
 
-    issue #40: 支援環境變數 SEAT_LOG_NOISE_FILTER_LEVEL 控制過濾嚴格度
-    - "strict" / "normal"：原本的過濾規則（3層檢查）
-    - "lenient"：只過濾純數字（用於 Metis fix/cmdlog-backspace 分支測試）
-    - "disabled"：完全不過濾，保留所有行
+    issue #40: Metis fix/cmdlog-backspace 分支修復 cmdlog 位元組流問題後，
+    打字殘缺片段已大幅減少，因此簡化過濾邏輯：只保留純數字判定。
+    其他碎片邏輯（重複字元、空白重複）已由前端 collapseBursts() 和
+    完整的 cmdlog 雙層機制取代。
 
     Returns:
         True if the line is obvious noise, False if it looks like a real command
@@ -140,23 +140,8 @@ def is_noise(command: str) -> bool:
     if not command:
         return True
 
-    if NOISE_FILTER_LEVEL == "disabled":
-        return False
-
-    # 純數字 — 所有等級都會過濾
+    # 純數字 — 明顯的打字測試，保留過濾
     if command.isdigit():
-        return True
-
-    if NOISE_FILTER_LEVEL == "lenient":
-        return False
-
-    # 單一字元重複（如 "aaaa"、"1111"）— 留意 len >= 3 才當雜訊
-    # 兩個字元可能是縮寫（"ls"、"cd"），不過濾
-    if len(command) >= 3 and len(set(command)) == 1:
-        return True
-
-    # 單一字元重複的變種，留個空白（退格測試："a a a"）
-    if len(set(c for c in command if c != ' ')) == 1 and command.count(' ') >= 2:
         return True
 
     return False

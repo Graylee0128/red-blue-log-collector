@@ -21,9 +21,6 @@ services:
       # disabled (local/dev only). Set this before exposing the port beyond
       # localhost -- see "Exposing to other VMs" in README.md.
       INGEST_TOKEN: ${INGEST_TOKEN:-}
-      # issue #40: 支援以下環境變數進行 Metis fix/cmdlog-backspace 分支測試：
-      #   RESPONSE_ACTION_TOKENS: "覆寫藍隊應對關鍵字"
-      #   DISABLED_DETECTION_RULES: "禁用特定偵測規則"（逗號分隔）
     ports:
       - "8001:8000"
     depends_on:
@@ -35,9 +32,6 @@ services:
   # 根據檔案名自動判斷 team（red-*.cmd / blue-{a,b}-*.cmd），避免 rsyslog 寫死 role
   # 的問題。需要 volume mount /var/log/metis/seat 且容器內使用者需要 adm 群組權限
   # 或等效的讀取存取。
-  #
-  # issue #40: 支援以下環境變數進行 Metis fix/cmdlog-backspace 分支測試：
-  #   SEAT_LOG_NOISE_FILTER_LEVEL: "normal"(預設) / "lenient" / "strict" / "disabled"
   seat-log-receiver:
     build: .
     command: ["python", "-m", "rbcollector.seat_log_receiver"]
@@ -69,9 +63,6 @@ services:
   #
   # 如果本機開發環境不是走 systemd（手動跑 checker.py --out 指到別的地方），
   # 用 METIS_BLUE_SCORE_HOST_DIR 覆寫這個預設值即可。
-  #
-  # issue #40: 支援以下環境變數進行 Metis fix/cmdlog-backspace 分支測試：
-  #   (暫無額外的 blue-score-receiver 特定變數)
   blue-score-receiver:
     build: .
     command: ["python", "-m", "rbcollector.blue_score_receiver"]
