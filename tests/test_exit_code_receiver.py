@@ -6,7 +6,6 @@ from rbcollector.exit_code_receiver import (
     find_exit_markers,
     find_last_session,
     parse_timing_file,
-    slice_timing_from_offset,
 )
 
 
@@ -47,29 +46,63 @@ def test_find_last_session_returns_none_when_unparseable():
 def test_parse_timing_file_skips_malformed_lines(tmp_path):
     path = tmp_path / "seat.timing"
     path.write_text("0.5 10\ngarbage line\n1.2 20\n", encoding="utf-8")
-    assert parse_timing_file(path) == [(0.5, 10), (1.2, 20)]
+    assert parse_timing_file(path) == [(0.5, 10, True), (1.2, 20, True)]
 
 
-def test_slice_timing_from_offset_finds_containing_chunk():
-    pairs = [(0.1, 10), (0.2, 10), (0.3, 10)]  # 累積位元組:10/20/30
-    # offset=15 落在第二個區塊(10~20)裡,回傳從那個區塊開始。
-    assert slice_timing_from_offset(pairs, 15) == [(0.2, 10), (0.3, 10)]
-    assert slice_timing_from_offset(pairs, 100) == []
+def test_parse_timing_file_multistream_format_keeps_all_entries_with_output_flag(tmp_path):
+    # 實測撞到的真實格式（issue #41 在 VM 上驗證時發現）：seat-shell.sh
+    # 同時用 --log-in/--log-out/--log-timing，script（util-linux ≥2.35）
+    # 因此改寫成三欄、開頭一個字母標串流，不是傳統兩欄格式——H 是
+    # header、O 是 .out 寫入、I 是 .in 寫入。三種都要保留（is_output 標記
+    # 是不是 O），因為 delay 是共用同一條時間軸，I／H 行的延遲也要算進
+    # 經過時間，只是不貢獻 .out 的位元組位移（見 find_exit_markers()）。
+    path = tmp_path / "seat.timing"
+    path.write_text(
+        "H 0.000000 START_TIME 2026-08-22 15:07:26+00:00\n"
+        "H 0.000000 COMMAND docker exec -it red-01 bash --rcfile /tmp/.metis-exit-rc.sh -i\n"
+        "O 0.265878 18\n"
+        "I 6.310613 1\n"
+        "O 0.003689 30\n",
+        encoding="utf-8",
+    )
+    assert parse_timing_file(path) == [
+        (0.0, 0, False),
+        (0.0, 0, False),
+        (0.265878, 18, True),
+        (6.310613, 1, False),
+        (0.003689, 30, True),
+    ]
 
 
 def test_find_exit_markers_reconstructs_timestamps_from_timing():
     session_start = datetime(2026, 8, 22, 10, 0, 0, tzinfo=timezone.utc)
     body = b"whoami output\n[[METIS_EXIT:0]]\nmore output\n[[METIS_EXIT:1]]\n"
-    # 兩個 timing 區塊,第一個涵蓋到第一個 marker 之後,第二個涵蓋剩下的。
+    # 兩個 output 區塊,第一個涵蓋到第一個 marker 之後,第二個涵蓋剩下的。
     first_marker_end = body.index(b"[[METIS_EXIT:0]]") + len(b"[[METIS_EXIT:0]]")
-    pairs = [(2.0, first_marker_end), (3.0, len(body) - first_marker_end)]
+    entries = [(2.0, first_marker_end, True), (3.0, len(body) - first_marker_end, True)]
 
-    markers = find_exit_markers(body, pairs, session_start)
+    markers = find_exit_markers(body, entries, session_start)
 
     assert markers == [
         (session_start + timedelta(seconds=2.0), 0),
         (session_start + timedelta(seconds=5.0), 1),
     ]
+
+
+def test_find_exit_markers_counts_input_stream_delay_but_not_its_bytes():
+    # issue #41 實測撞到的真的 bug：I 行的延遲（使用者發呆／打字的真正
+    # 間隔）如果整批跳過不算，時間軸會被壓縮到不合理的短。這裡驗證
+    # I 行的延遲有算進經過時間，但它的位元組數不會被當成 .out 的位移。
+    session_start = datetime(2026, 8, 22, 10, 0, 0, tzinfo=timezone.utc)
+    body = b"x" * 5 + b"[[METIS_EXIT:0]]"
+    entries = [
+        (1.0, 5, True),   # .out 寫了 5 個位元組,經過 1 秒
+        (10.0, 1, False),  # 使用者發呆/打字 10 秒才按下一個鍵(.in),不貢獻 .out 位移
+        (0.5, len(body) - 5, True),  # 標記本身寫進 .out,再經過 0.5 秒
+    ]
+    markers = find_exit_markers(body, entries, session_start)
+    # 標記時間應該是 1 + 10 + 0.5 = 11.5 秒後,不是只算 output 行的 1.5 秒。
+    assert markers == [(session_start + timedelta(seconds=11.5), 0)]
 
 
 def test_correlate_exit_codes_matches_first_marker_in_window():

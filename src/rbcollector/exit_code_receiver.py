@@ -113,57 +113,86 @@ def find_last_session(out_bytes: bytes) -> tuple[int, datetime] | None:
     return last
 
 
-def slice_timing_from_offset(timing_pairs: list[tuple[float, int]], offset: int) -> list[tuple[float, int]]:
-    """回傳從「累積位元組數超過 offset」那個區塊開始的 timing 清單，
-    給 find_last_session() 抓到的重連邊界用——這個區塊本身橫跨邊界前後
-    兩段時間，第一筆的秒數會混進一點邊界之前的等待時間，這是跟其他地方
-    一致的「以區塊為單位」精度取捨，不是遺漏。"""
-    cumulative = 0
-    for i, (_, nbytes) in enumerate(timing_pairs):
-        cumulative += nbytes
-        if cumulative > offset:
-            return timing_pairs[i:]
-    return []
+def parse_timing_file(path: Path) -> list[tuple[float, int, bool]]:
+    """`<seat>.timing` 實測（issue #41 在真實 VM 上驗證時發現）是 util-linux
+    ≥2.35 的多串流「進階」計時格式，不是傳統單純兩欄「延遲 位元組」——
+    `seat-shell.sh` 同時用 `--log-in`／`--log-out`／`--log-timing`，這種
+    組合會讓 `script` 改寫成三欄、開頭一個字母標串流：
 
+      H <秒數> <欄位...>  —— header/metadata（START_TIME、COMMAND 等），
+                             不是真的寫入事件，但秒數一樣要算進經過時間。
+      O <秒數> <位元組數> —— `.out`（畫面輸出）的一筆寫入，這是要重建
+                             時間軸用的那一半。
+      I <秒數> <位元組數> —— `.in`（使用者輸入）的一筆寫入。
 
-def parse_timing_file(path: Path) -> list[tuple[float, int]]:
-    """`<seat>.timing` 的每一行是「距上次寫入的延遲秒數 位元組數」。壞行
-    （非兩欄、非數字）直接跳過,不讓一行壞資料拖垮整份檔案的重建。"""
-    pairs: list[tuple[float, int]] = []
+    **關鍵：秒數是「距離上一筆事件（不分 H/I/O 串流）的延遲」，是共用同
+    一條時間軸，不是各自獨立計時**——H/I 那些行的秒數如果整批跳過不算，
+    會把使用者發呆／打字的真正間隔（通常記在 I 行上）漏算掉，讓還原出來
+    的時間軸被壓縮到不合理的短。所以這裡回傳完整三欄
+    `(delay, byte_count, is_output)`，`is_output` 只用來決定要不要把
+    這筆的位元組數算進 `.out` 的累積位移，delay 每一筆都要算。
+
+    同時保留舊版單純兩欄格式的相容判斷（沒有字母前綴、剛好兩個欄位，
+    視為單一串流、全部當 output）。壞行（欄位數不對、非數字）直接跳過，
+    不讓一行壞資料拖垮整份檔案的重建。
+    """
+    entries: list[tuple[float, int, bool]] = []
     try:
         content = path.read_text(encoding="utf-8", errors="replace")
     except OSError:
-        return pairs
+        return entries
     for line in content.splitlines():
         parts = line.split()
-        if len(parts) != 2:
+        if len(parts) >= 2 and parts[0] in ("H", "I", "O", "S"):
+            # H 行後面接的是 metadata（如 "START_TIME 2026-... ..."），
+            # 欄位數不固定——不能要求剛好三欄，只認第一、二欄（型別、
+            # 延遲），第三欄嘗試當位元組數解析，解不出來就是 0（H 行
+            # 本來就不貢獻 .out 位移，這個數字不會被用到）。
+            delay_str = parts[1]
+            is_output = parts[0] == "O"
+            try:
+                nbytes = int(parts[2]) if len(parts) >= 3 else 0
+            except ValueError:
+                nbytes = 0
+        elif len(parts) == 2:
+            delay_str, nbytes_str = parts
+            is_output = True
+            try:
+                nbytes = int(nbytes_str)
+            except ValueError:
+                continue
+        else:
             continue
         try:
-            pairs.append((float(parts[0]), int(parts[1])))
+            entries.append((float(delay_str), nbytes, is_output))
         except ValueError:
             continue
-    return pairs
+    return entries
 
 
 def find_exit_markers(
-    out_bytes: bytes, timing_pairs: list[tuple[float, int]], session_start: datetime
+    out_bytes: bytes, timing_entries: list[tuple[float, int, bool]], session_start: datetime
 ) -> list[tuple[datetime, int]]:
     """回傳 (時間, exit code) 清單,依 .out 裡出現的先後順序(即時間順序)。
 
-    .timing 每一筆代表「這批位元組是在累積到目前這個時間點時寫入的」,
-    不是逐位元組給時間戳——同一批 timing 區間內的所有位元組都當同一個
-    時間點處理,精細度就到這裡,不需要更細(marker 本身只有幾十個位元組,
-    不會橫跨太多個 timing 區間造成誤差累積)。
+    `timing_entries` 是 parse_timing_file() 回傳的完整三欄清單，要照原始
+    檔案順序處理——每一筆的 delay 都要累加進經過時間（不分是不是
+    output），只有 is_output 那些才把位元組數累加進 `.out` 的位移量。
+    這樣才能正確算出「.out 累積到第 N 個位元組時，經過了多少秒」，不會
+    因為漏算 I／H 行的延遲而把整段時間軸壓縮成不合理的短。
+
+    同一批 output 區間內的所有位元組都當同一個時間點處理，精細度就到
+    這裡，不需要更細（marker 本身只有幾十個位元組，不會橫跨太多個
+    timing 區間造成誤差累積）。
     """
-    # 累積時間到累積位元組數的區間表:cumulative_bytes[i] 之前寫完的內容,
-    # 對應時間是 cumulative_seconds[i]。
-    boundaries: list[tuple[int, float]] = []  # (累積位元組數上限, 累積秒數)
-    total_bytes = 0
-    total_seconds = 0.0
-    for delay, nbytes in timing_pairs:
-        total_seconds += delay
-        total_bytes += nbytes
-        boundaries.append((total_bytes, total_seconds))
+    boundaries: list[tuple[int, float]] = []  # (累積 output 位元組數上限, 累積秒數)
+    cumulative_out_bytes = 0
+    elapsed_seconds = 0.0
+    for delay, nbytes, is_output in timing_entries:
+        elapsed_seconds += delay
+        if is_output:
+            cumulative_out_bytes += nbytes
+            boundaries.append((cumulative_out_bytes, elapsed_seconds))
 
     def _time_at_offset(offset: int) -> datetime:
         for byte_limit, elapsed in boundaries:
@@ -171,7 +200,7 @@ def find_exit_markers(
                 return session_start + timedelta(seconds=elapsed)
         # 超過 .timing 涵蓋範圍(理論上不該發生,.out/.timing 應該同步寫入)
         # ——退回最後一個已知時間點,好過整批標記直接漏掉。
-        return session_start + timedelta(seconds=total_seconds)
+        return session_start + timedelta(seconds=elapsed_seconds)
 
     markers: list[tuple[datetime, int]] = []
     for match in _EXIT_MARKER_RE.finditer(out_bytes):
@@ -241,16 +270,19 @@ class ExitCodeCorrelator:
             return
         session_offset, session_start = session
 
-        timing_pairs = parse_timing_file(timing_path)
-        if not timing_pairs:
+        timing_entries = parse_timing_file(timing_path)
+        if not timing_entries:
             return
 
         # 只看最後一次重連之後的內容/時間——見 find_last_session() 的說明。
-        markers = find_exit_markers(
-            out_bytes[session_offset:],
-            slice_timing_from_offset(timing_pairs, session_offset),
-            session_start,
-        )
+        #
+        # 實測發現（issue #41 在真實 VM 上驗證時）：.timing 不像 .out／.in
+        # 那樣跨重連累積——每次 metis-ttyd@ 服務重啟等於全新的 script
+        # 行程，.timing 只描述「這一次」自己的位元組流，座標本來就是從 0
+        # 算起，不是整份 .out 檔案的絕對位移，所以不用（也不能）拿
+        # session 在 .out 裡的絕對偏移去切 .timing——直接整份跟切過的
+        # `out_bytes[session_offset:]` 對齊即可。
+        markers = find_exit_markers(out_bytes[session_offset:], timing_entries, session_start)
         if not markers:
             return
 
