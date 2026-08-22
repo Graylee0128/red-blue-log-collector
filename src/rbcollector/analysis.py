@@ -167,6 +167,12 @@ _RESPONSE_WINDOW_SECONDS = 300
 # DB 憑證、cron、iptables、docker socket）整理出的關鍵字，不是憑空編的。
 # 只是「看起來像在處理」的啟發式線索，不保證真的成功——真正的驗證交給
 # _is_remediation_event()，兩者都成立才算事後應對命中。
+#
+# issue #40：Metis fix/cmdlog-backspace（se-218/Metis#142）修復退格／方向鍵
+# 重放後，拿實際的 cmdlog.sh 新舊兩版跑同一批模擬鍵盤位元組流比對過（見
+# tests/test_issue_40_metis_cmdlog_fix.py）——修復前殘留字元有機會污染到
+# 關鍵字本身中間（如 "iptables" 被打斷成 "itpables...DROPt"，比對失敗)，
+# 修復後不再發生。列表本身沒有理由跟著改，維持不動。
 _RESPONSE_TOKENS = (
     "chmod", "chown", "iptables", "ufw", "firewall-cmd", "nft ",
     "drop", "deny", "block",

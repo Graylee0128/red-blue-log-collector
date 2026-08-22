@@ -100,14 +100,17 @@ def test_is_noise_pure_digits():
 
 
 def test_is_noise_repeated_character():
+    # issue #40 重新驗證：拿真實 cmdlog.sh 新舊兩版跑過同一批鍵盤輸入後
+    # 確認重複字元雜訊（如打字測試/等待時敲擊）跟退格重放修復無關，維持過濾
     assert is_noise("aaaa") is True
-    assert is_noise("1111") is True
+    assert is_noise("1111") is True   # 純數字也被過濾
     assert is_noise("----") is True
     # 兩個字元不算雜訊（可能是有效的縮寫）
     assert is_noise("aa") is False
 
 
 def test_is_noise_repeated_with_spaces():
+    # issue #40 重新驗證：同上，維持過濾
     assert is_noise("a a a") is True
     assert is_noise("1 1 1") is True
 

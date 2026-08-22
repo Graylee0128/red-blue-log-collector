@@ -29,7 +29,6 @@ logger = logging.getLogger("rbcollector.seat_log_receiver")
 DEFAULT_SEAT_LOG_DIR = "/var/log/metis/seat"
 DEFAULT_POLL_INTERVAL = 1.0  # seconds
 
-
 def get_team_from_filename(filename: str) -> str | None:
     """Extract team from Metis seat log filename.
 
@@ -119,6 +118,23 @@ def blue_payload_from_seat_log(parsed: dict[str, Any], filename: str) -> dict[st
 
 def is_noise(command: str) -> bool:
     """判斷一行指令是否明顯是雜訊（純數字、重複字元等打字測試）。
+
+    issue #40 重新驗證結論：這三項檢查**維持不動**，不因 Metis
+    fix/cmdlog-backspace（se-218/Metis#142）而簡化。原因是拿實際的
+    Metis cmdlog.sh 新舊兩版（修復前 commit 1ae6855^、修復後 origin/main
+    a32d288）餵同一批模擬鍵盤位元組流（含退格／方向鍵修正）跑過（見
+    tests/test_issue_40_metis_cmdlog_fix.py 的 REAL_PIPELINE_SAMPLES）：
+    - Metis 的修復解決的是「退格／方向鍵修正的殘留字元污染單行內容」
+      （如 "iptables ... DROPP"、"itpables ... DROPt"），這批污染在修
+      復後確實消失了，但它們從來就不是純數字/重複字元，is_noise() 原本
+      也沒在管這個——修不修都跟這三項檢查無關。
+    - 這裡要濾的「純數字」「單一字元重複」「重複字元夾空白」是選手打字
+      測試/等待時的敲擊噪音，跟 cmdlog.sh 有沒有正確重放退格是兩件事：
+      同一批鍵盤輸入餵給修復前後兩版 cmdlog.sh，"aaaaaa"／"123456" 這類
+      輸出完全一致，修復對它們沒有任何影響。
+    上一輪（PR #50/#51，已被 main 回退）把重複字元檢查拿掉，前提是「碎片
+    消失了所以不用濾」，但這批真實資料顯示重複字元雜訊本來就不是碎片，
+    拿掉沒有事實根據，這裡改回保留。
 
     Returns:
         True if the line is obvious noise, False if it looks like a real command
